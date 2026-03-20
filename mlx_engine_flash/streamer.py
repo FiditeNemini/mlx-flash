@@ -24,24 +24,25 @@ WeightStreamer
 
 from __future__ import annotations
 
+import contextlib
 import json
 import mmap
 import os
 import struct
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
 from .config import FlashConfig
 from .page_cache import prefetch, release, set_sequential
 
+
 # ── dtype mapping: safetensors dtype string → numpy dtype ─────────────────
-def _get_st_dtype_map() -> Dict[str, np.dtype]:
-    m = {
+def _get_st_dtype_map() -> dict[str, Any]:
+    m: dict[str, Any] = {
         "F64":  np.dtype("float64"),
         "F32":  np.dtype("float32"),
         "F16":  np.dtype("float16"),
@@ -75,11 +76,11 @@ class TensorEntry:
     data_offset: int     # absolute byte offset from start of file
     data_length: int     # byte length
     dtype: str           # safetensors dtype string
-    shape: Tuple[int, ...]
+    shape: tuple[int, ...]
     n_bits: int          # 4 / 8 / 16 / 32 — used for quant validation
 
 
-def _parse_safetensors_header(path: Path) -> Tuple[dict, int]:
+def _parse_safetensors_header(path: Path) -> tuple[dict, int]:
     """
     Read the safetensors header without loading the full file.
     Returns (header_dict, data_start_offset).
@@ -98,14 +99,22 @@ def _parse_safetensors_header(path: Path) -> Tuple[dict, int]:
 def _quant_bits(dtype_str: str) -> int:
     """Best-effort extraction of effective bit-width from dtype string."""
     lower = dtype_str.lower()
-    if "q2" in lower: return 2
-    if "q3" in lower: return 3
-    if "q4" in lower: return 4
-    if "q5" in lower: return 5
-    if "q6" in lower: return 6
-    if "q8" in lower: return 8
-    if lower in ("f16", "bf16"): return 16
-    if lower == "f32": return 32
+    if "q2" in lower:
+        return 2
+    if "q3" in lower:
+        return 3
+    if "q4" in lower:
+        return 4
+    if "q5" in lower:
+        return 5
+    if "q6" in lower:
+        return 6
+    if "q8" in lower:
+        return 8
+    if lower in ("f16", "bf16"):
+        return 16
+    if lower == "f32":
+        return 32
     return 8   # fallback
 
 
@@ -120,9 +129,9 @@ class SafetensorsIndex:
 
     def __init__(self, model_dir: Path) -> None:
         self.model_dir = model_dir
-        self._entries: Dict[str, TensorEntry] = {}
-        self._mmaps: Dict[Path, mmap.mmap] = {}
-        self._fds: Dict[Path, int] = {}
+        self._entries: dict[str, TensorEntry] = {}
+        self._mmaps: dict[Path, mmap.mmap] = {}
+        self._fds: dict[Path, int] = {}
         self._lock = threading.Lock()
         self._load_index()
 
@@ -142,10 +151,10 @@ class SafetensorsIndex:
 
     def _load_sharded(self, index_path: Path) -> None:
         idx = json.loads(index_path.read_text())
-        weight_map: Dict[str, str] = idx.get("weight_map", {})
+        weight_map: dict[str, str] = idx.get("weight_map", {})
         shards_needed = set(weight_map.values())
         # Build per-shard header → entries
-        shard_headers: Dict[str, Tuple[dict, int]] = {}
+        shard_headers: dict[str, tuple[dict, int]] = {}
         for shard_name in shards_needed:
             shard_path = self.model_dir / shard_name
             header, data_start = _parse_safetensors_header(shard_path)
@@ -200,17 +209,14 @@ class SafetensorsIndex:
                 set_sequential(mm, 0, mm.size())
 
     def close_mmaps(self) -> None:
+        import contextlib
         for mm in self._mmaps.values():
-            try:
-                mm.close()
-            except BufferError:
+            with contextlib.suppress(BufferError):
                 # Occurs if zero-copy arrays are still alive (e.g. in tests)
-                pass
+                mm.close()
         for fd in self._fds.values():
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
         self._mmaps.clear()
         self._fds.clear()
 
@@ -220,18 +226,18 @@ class SafetensorsIndex:
     def __getitem__(self, name: str) -> TensorEntry:
         return self._entries[name]
 
-    def get(self, name: str) -> Optional[TensorEntry]:
+    def get(self, name: str) -> TensorEntry | None:
         return self._entries.get(name)
 
-    def tensor_names(self) -> List[str]:
+    def tensor_names(self) -> list[str]:
         return list(self._entries.keys())
 
-    def layer_tensor_names(self, layer_idx: int) -> List[str]:
+    def layer_tensor_names(self, layer_idx: int) -> list[str]:
         """Return all tensor names belonging to transformer layer *layer_idx*."""
         prefix = f"model.layers.{layer_idx}."
         return [n for n in self._entries if n.startswith(prefix)]
 
-    def expert_tensor_names(self, layer_idx: int, expert_idx: int) -> List[str]:
+    def expert_tensor_names(self, layer_idx: int, expert_idx: int) -> list[str]:
         """Return tensor names for a specific MoE expert."""
         prefix = f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
         return [n for n in self._entries if n.startswith(prefix)]
@@ -250,10 +256,8 @@ class SafetensorsIndex:
             parts = name.split(".")
             for i, p in enumerate(parts):
                 if p == "layers" and i + 1 < len(parts):
-                    try:
+                    with contextlib.suppress(ValueError):
                         idxs.add(int(parts[i + 1]))
-                    except ValueError:
-                        pass
         return max(idxs) + 1 if idxs else 0
 
     @property
@@ -275,7 +279,7 @@ class MmapReader:
       can reclaim the physical pages from this process.
     """
 
-    def __init__(self, index: "SafetensorsIndex") -> None:
+    def __init__(self, index: SafetensorsIndex) -> None:
         self.index = index
 
     def read_one(self, path: Path, offset: int, size: int) -> memoryview:
@@ -286,8 +290,8 @@ class MmapReader:
     def read_many(
         self,
         path: Path,
-        requests: List[Tuple[int, int]],  # (offset, size)
-    ) -> List[memoryview]:
+        requests: list[tuple[int, int]],  # (offset, size)
+    ) -> list[memoryview]:
         # mmap-based 'reads' are just slice operations; no threads needed
         # as the actual I/O happens on-demand via page faults.
         return [self.read_one(path, off, sz) for off, sz in requests]
@@ -320,9 +324,9 @@ class WeightStreamer:
 
     def stream_tensors(
         self,
-        names: List[str],
-        prefetch_names: Optional[List[str]] = None,
-    ) -> Dict[str, np.ndarray]:
+        names: list[str],
+        prefetch_names: list[str] | None = None,
+    ) -> dict[str, np.ndarray]:
         """
         Read *names* in parallel (via page faults).
         Optionally issues a prefetch hint for *prefetch_names* (next layer).
@@ -336,7 +340,7 @@ class WeightStreamer:
                     prefetch(mm, entry.data_offset, entry.data_length)
 
         # Build per-file batches
-        by_file: Dict[Path, List[Tuple[str, int, int]]] = {}
+        by_file: dict[Path, list[tuple[str, int, int]]] = {}
         for name in names:
             entry = self.index.get(name)
             if entry is None:
@@ -345,12 +349,12 @@ class WeightStreamer:
                 (name, entry.data_offset, entry.data_length)
             )
 
-        results: Dict[str, np.ndarray] = {}
+        results: dict[str, np.ndarray] = {}
         for fpath, batch in by_file.items():
             tensor_names = [b[0] for b in batch]
             requests = [(b[1], b[2]) for b in batch]
             raw_list = self._reader.read_many(fpath, requests)
-            for tname, raw in zip(tensor_names, raw_list):
+            for tname, raw in zip(tensor_names, raw_list, strict=False):
                 entry = self.index[tname]
                 results[tname] = self._decode(entry, raw)
 
@@ -373,7 +377,7 @@ class WeightStreamer:
                 release(mm, entry.data_offset, entry.data_length,
                         self.config.eviction_strategy)
 
-    def prefetch_experts(self, layer_idx: int, expert_idxs: List[int]) -> None:
+    def prefetch_experts(self, layer_idx: int, expert_idxs: list[int]) -> None:
         """Prefetch only the specified MoE experts for a layer."""
         for eidx in expert_idxs:
             for name in self.index.expert_tensor_names(layer_idx, eidx):
@@ -400,7 +404,7 @@ class WeightStreamer:
         self._reader.close()
         self.index.close_mmaps()
 
-    def __enter__(self) -> "WeightStreamer":
+    def __enter__(self) -> WeightStreamer:
         return self
 
     def __exit__(self, *_) -> None:

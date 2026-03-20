@@ -27,7 +27,7 @@ __all__ = [
     "FlashConfig",
     "FlashManager",
     "FlashModelLoader",
-    "ParallelPreader",
+    "MmapReader",
     "WeightStreamer",
 ]
 

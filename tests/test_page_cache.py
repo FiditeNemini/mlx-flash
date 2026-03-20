@@ -1,21 +1,22 @@
 """Tests for macOS page cache management (madvise wrappers)."""
 
 import mmap
-import sys
-import tempfile
 import os
+import sys
+
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    sys.platform != "darwin",
-    reason="page_cache module is macOS-only"
-)
-
 from mlx_engine_flash.page_cache import (
-    prefetch, release, set_sequential, madvise_range,
-    MADV_WILLNEED, MADV_FREE,
+    MADV_WILLNEED,
+    madvise_range,
+    prefetch,
+    release,
+    set_sequential,
 )
 
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin", reason="Page cache hints are macOS-specific here"
+)
 
 @pytest.fixture
 def tmp_mmap(tmp_path):

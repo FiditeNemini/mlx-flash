@@ -72,7 +72,7 @@ class FlashConfig:
             raise ValueError("prefetch_layers must be >= 0")
 
     @classmethod
-    def from_dict(cls, d: dict) -> "FlashConfig":
+    def from_dict(cls, d: dict) -> FlashConfig:
         """Build a FlashConfig from a plain dict (e.g. from JSON / Modelfile)."""
         valid = {f.name for f in cls.__dataclass_fields__.values()
                  if not f.name.startswith("_")}

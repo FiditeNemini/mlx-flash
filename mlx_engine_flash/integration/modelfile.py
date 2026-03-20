@@ -25,8 +25,7 @@ Example Modelfile::
 
 from __future__ import annotations
 
-import re
-from typing import Optional
+import contextlib
 
 from ..config import FlashConfig
 
@@ -38,7 +37,7 @@ def parse_flash_directives(modelfile_text: str) -> FlashConfig:
     Returns a FlashConfig; enabled=False if no FLASH directive found.
     """
     cfg_dict: dict = {}
-    enabled: Optional[bool] = None
+    enabled: bool | None = None
 
     for line in modelfile_text.splitlines():
         line = line.strip()
@@ -54,25 +53,17 @@ def parse_flash_directives(modelfile_text: str) -> FlashConfig:
         if key == "FLASH":
             enabled = _parse_bool(value)
         elif key == "FLASH_RAM_GB":
-            try:
+            with contextlib.suppress(ValueError):
                 cfg_dict["ram_budget_gb"] = float(value)
-            except ValueError:
-                pass
         elif key == "FLASH_THREADS":
-            try:
+            with contextlib.suppress(ValueError):
                 cfg_dict["n_io_threads"] = int(value)
-            except ValueError:
-                pass
         elif key == "FLASH_PREFETCH_LAYERS":
-            try:
+            with contextlib.suppress(ValueError):
                 cfg_dict["prefetch_layers"] = int(value)
-            except ValueError:
-                pass
         elif key == "FLASH_QUANT_WARN_BELOW":
-            try:
+            with contextlib.suppress(ValueError):
                 cfg_dict["min_quant_bits"] = int(value)
-            except ValueError:
-                pass
         elif key == "FLASH_TOP_K":
             try:
                 k = int(value)

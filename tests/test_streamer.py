@@ -1,7 +1,6 @@
 """Tests for SafetensorsIndex and WeightStreamer."""
 
 import numpy as np
-import pytest
 
 from mlx_engine_flash.streamer import SafetensorsIndex, WeightStreamer
 
@@ -44,7 +43,7 @@ def test_streamer_stream_layer(tmp_model_dir, flash_config):
         names = streamer.index.layer_tensor_names(0)
         result = streamer.stream_tensors(names)
         assert len(result) == len(names)
-        for name, arr in result.items():
+        for _name, arr in result.items():
             assert isinstance(arr, np.ndarray)
 
 

@@ -15,13 +15,13 @@ loaded once at import time.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import warnings
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
-_METALLIB: Optional[object] = None   # will hold mx.metallib handle if loaded
+if TYPE_CHECKING:
+    import mlx.core as mx
+
+_METALLIB: object | None = None   # will hold mx.metallib handle if loaded
 _KERNELS_DIR = Path(__file__).parent
 
 
@@ -32,14 +32,10 @@ def _try_load_metallib() -> bool:
     if not lib_path.exists():
         return False
     try:
-        import mlx.core as mx
-        # MLX exposes mx.metal.compile_program for AOT kernels.
-        # Alternatively we use mx.fast.metal_kernel for JIT.
-        # Here we just record that the library exists; individual kernels
-        # will reference it via mx.fast.metal_kernel(source=...).
+        import mlx.core  # noqa: F401
         _METALLIB = str(lib_path)
         return True
-    except Exception:
+    except ImportError:
         return False
 
 
@@ -47,10 +43,10 @@ _METAL_AVAILABLE = _try_load_metallib()
 
 
 def dequant_q4_0(
-    quantised: "mx.array",  # uint8, shape [n_blocks * 18]
+    quantised: mx.array,  # uint8, shape [n_blocks * 18]
     rows: int,
     cols: int,
-) -> "mx.array":
+) -> mx.array:
     """
     Dequantise Q4_0 quantised weights to float16.
     Falls back to MLX built-in if custom kernel is unavailable.
@@ -61,10 +57,10 @@ def dequant_q4_0(
     if _METAL_AVAILABLE:
         return _metal_dequant_q4_0(quantised, rows, cols)
     # Built-in path: mlx handles Q4_K internally
-    return mx.dequantize(quantised, rows=rows, cols=cols)
+    return mx.dequantize(quantised, rows=rows, cols=cols)  # type: ignore
 
 
-def swiglu_fused(gate: "mx.array", up: "mx.array") -> "mx.array":
+def swiglu_fused(gate: mx.array, up: mx.array) -> mx.array: # type: ignore
     """
     Fused SwiGLU: out = silu(gate) * up
     Falls back to element-wise MLX ops if kernel unavailable.
@@ -76,7 +72,7 @@ def swiglu_fused(gate: "mx.array", up: "mx.array") -> "mx.array":
     return mx.sigmoid(gate) * gate * up
 
 
-def _metal_dequant_q4_0(q: "mx.array", rows: int, cols: int) -> "mx.array":
+def _metal_dequant_q4_0(q: mx.array, rows: int, cols: int) -> mx.array:
     """JIT-compile and run the flash_dequant_q4_0 Metal kernel."""
     import mlx.core as mx
     source = (_KERNELS_DIR / "flash_dequant.metal").read_text()
@@ -87,7 +83,7 @@ def _metal_dequant_q4_0(q: "mx.array", rows: int, cols: int) -> "mx.array":
         source=source,
     )
     n_blocks = (rows * cols) // 32
-    out = kernel(
+    out = kernel(  # type: ignore
         inputs=[q, mx.array(rows, dtype=mx.uint32),
                 mx.array(cols, dtype=mx.uint32)],
         template=[("T", mx.float16)],
@@ -99,7 +95,7 @@ def _metal_dequant_q4_0(q: "mx.array", rows: int, cols: int) -> "mx.array":
     return out[0]
 
 
-def _metal_swiglu(gate: "mx.array", up: "mx.array") -> "mx.array":
+def _metal_swiglu(gate: mx.array, up: mx.array) -> mx.array:
     """JIT-compile and run the swiglu_fused Metal kernel."""
     import mlx.core as mx
     source = (_KERNELS_DIR / "swiglu_fused.metal").read_text()
@@ -110,7 +106,7 @@ def _metal_swiglu(gate: "mx.array", up: "mx.array") -> "mx.array":
         output_names=["out"],
         source=source,
     )
-    out = kernel(
+    out = kernel(  # type: ignore
         inputs=[gate, up],
         template=[("T", mx.float16)],
         grid=(n, 1, 1),

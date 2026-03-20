@@ -24,9 +24,7 @@ from __future__ import annotations
 import ctypes
 import mmap
 import os
-import platform
 import sys
-from typing import Optional
 
 _IS_MACOS = sys.platform == "darwin"
 
@@ -39,9 +37,9 @@ MADV_DONTNEED   = 4
 MADV_FREE       = 5   # macOS ≥ 10.9 (most efficient release)
 
 # ── load libSystem ─────────────────────────────────────────────────────────
-_libc: Optional[ctypes.CDLL] = None
+_libc: ctypes.CDLL | None = None
 
-def _get_libc() -> Optional[ctypes.CDLL]:
+def _get_libc() -> ctypes.CDLL | None:
     global _libc
     if _libc is None and _IS_MACOS:
         try:
@@ -149,7 +147,7 @@ class PageCacheRegion:
         self.evict_on_exit = evict_on_exit
         self.strategy = strategy
 
-    def __enter__(self) -> "PageCacheRegion":
+    def __enter__(self) -> PageCacheRegion:
         prefetch(self.mm, self.offset, self.size)
         return self
 

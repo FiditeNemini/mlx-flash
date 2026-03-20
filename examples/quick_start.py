@@ -51,7 +51,7 @@ def main():
     print()
 
     if args.benchmark:
-        print(f"\n--- Benchmark ---")
+        print("\n--- Benchmark ---")
         print(f"Load:   {load_s:.2f}s")
         print(f"Gen:    {tokens / elapsed:.1f} tok/s  ({tokens} tokens, {elapsed:.1f}s)")
 

@@ -23,10 +23,7 @@ MoEFlashHandler
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -49,7 +46,7 @@ class MoEConfig:
     expert_tensor_pattern: str = "mlp.experts.{eidx}"  # name template
 
     @classmethod
-    def from_model_config(cls, cfg: dict) -> Optional["MoEConfig"]:
+    def from_model_config(cls, cfg: dict) -> MoEConfig | None:
         """
         Parse MoE parameters from a HuggingFace config.json dict.
         Returns None if the model is not MoE.
@@ -90,14 +87,14 @@ class MoERouter:
         self,
         router_weights: np.ndarray,    # shape: [hidden_dim, n_experts]
         moe_cfg: MoEConfig,
-        top_k_override: Optional[int] = None,
+        top_k_override: int | None = None,
     ) -> None:
         self._weights = router_weights
         self.moe_cfg = moe_cfg
         self.top_k = top_k_override or moe_cfg.top_k
-        self._weights_mx: Optional["mx.array"] = None
+        self._weights_mx: mx.array | None = None
 
-    def _to_mlx(self) -> "mx.array":
+    def _to_mlx(self) -> mx.array:
         if self._weights_mx is None:
             self._weights_mx = mx.array(self._weights)
         return self._weights_mx
@@ -105,7 +102,7 @@ class MoERouter:
     def route(
         self,
         hidden_states: np.ndarray,   # [batch * seq, hidden_dim]
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Run router and return (expert_indices, expert_weights).
 
@@ -131,7 +128,7 @@ class MoERouter:
 
         return expert_indices.astype(np.int32), expert_weights.astype(np.float32)
 
-    def unique_experts(self, expert_indices: np.ndarray) -> List[int]:
+    def unique_experts(self, expert_indices: np.ndarray) -> list[int]:
         """Return sorted list of unique expert indices needed for this batch."""
         return sorted(set(expert_indices.flatten().tolist()))
 
@@ -155,12 +152,12 @@ class MoEFlashHandler:
         streamer: WeightStreamer,
         moe_cfg: MoEConfig,
         config: FlashConfig,
-        router_weights_by_layer: Dict[int, np.ndarray],
+        router_weights_by_layer: dict[int, np.ndarray],
     ) -> None:
         self._streamer = streamer
         self._moe_cfg = moe_cfg
         self._config = config
-        self._routers: Dict[int, MoERouter] = {
+        self._routers: dict[int, MoERouter] = {
             layer_idx: MoERouter(
                 rw, moe_cfg,
                 top_k_override=config.moe_top_k_override,
@@ -175,30 +172,30 @@ class MoEFlashHandler:
     def route(
         self,
         hidden_states: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Route *hidden_states* through this layer's router."""
         router = self._routers.get(self._current_layer)
         if router is None:
             raise KeyError(f"No router for layer {self._current_layer}")
         return router.route(hidden_states)
 
-    def unique_experts(self, expert_indices: np.ndarray) -> List[int]:
+    def unique_experts(self, expert_indices: np.ndarray) -> list[int]:
         router = self._routers[self._current_layer]
         return router.unique_experts(expert_indices)
 
-    def prefetch_experts(self, expert_idxs: List[int]) -> None:
+    def prefetch_experts(self, expert_idxs: list[int]) -> None:
         """Issue page-cache prefetch for the given experts in current layer."""
         self._streamer.prefetch_experts(self._current_layer, expert_idxs)
 
     def load_experts(
-        self, expert_idxs: List[int]
-    ) -> Dict[int, Dict[str, np.ndarray]]:
+        self, expert_idxs: list[int]
+    ) -> dict[int, dict[str, np.ndarray]]:
         """
         Stream weights for each expert index in *expert_idxs*.
         Returns {expert_idx: {tensor_name: np.ndarray}}.
         """
-        result: Dict[int, Dict[str, np.ndarray]] = {}
-        all_names: List[str] = []
+        result: dict[int, dict[str, np.ndarray]] = {}
+        all_names: list[str] = []
         for eidx in expert_idxs:
             names = self._streamer.index.expert_tensor_names(
                 self._current_layer, eidx

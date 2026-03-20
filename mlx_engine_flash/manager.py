@@ -1,24 +1,17 @@
 
 from __future__ import annotations
 
-import functools
-import json
-import warnings
-import types
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
-
-import numpy as np
+from typing import Any
 
 try:
     import mlx.core as mx
-    import mlx.nn as nn
     _HAS_MLX = True
 except ImportError:
     _HAS_MLX = False
 
 try:
-    import mlx_lm
+    import mlx_lm  # noqa: F401
     _HAS_MLX_LM = True
 except ImportError:
     _HAS_MLX_LM = False
@@ -36,16 +29,16 @@ class FlashManager:
 
     def __init__(self, config: FlashConfig) -> None:
         self.config = config
-        self._loader: Optional[FlashModelLoader] = None
-        self._streamer: Optional[WeightStreamer] = None
-        self._prefetcher: Optional[WeightPrefetcher] = None
+        self._loader: FlashModelLoader | None = None
+        self._streamer: WeightStreamer | None = None
+        self._prefetcher: WeightPrefetcher | None = None
 
     def load(
         self,
         model_path: str,
-        load_fn: Optional[Any] = None,
+        load_fn: Any | None = None,
         **mlx_lm_kwargs: Any,
-    ) -> Tuple[Any, Any]:
+    ) -> tuple[Any, Any]:
         if not _HAS_MLX_LM:
             raise ImportError("mlx_lm not installed")
 
@@ -62,15 +55,16 @@ class FlashManager:
         mlx_lm_kwargs["lazy"] = True
         
         # Load skeleton on CPU to avoid initial Metal memory checks
-        mx.set_default_device(mx.cpu)
+        mx.set_default_device(mx.cpu)  # type: ignore
         try:
-            model, tokenizer = load_fn(
+            result = load_fn(
                 model_path,
                 tokenizer_config=tokenizer_kwargs,
                 **mlx_lm_kwargs,
             )
+            model, tokenizer = result[0], result[1]
         finally:
-            mx.set_default_device(mx.gpu)
+            mx.set_default_device(mx.gpu)  # type: ignore
 
         # ── Step 2: setup streaming ───────────────────────────────────────
         self._loader = FlashModelLoader(model_dir, self.config).__enter__()
@@ -80,6 +74,7 @@ class FlashManager:
 
         # ── Step 4: start prefetcher ──────────────────────────────────────
         self._streamer = self._loader._streamer
+        assert self._streamer is not None
         self._prefetcher = WeightPrefetcher(
             self._streamer, self.config, self._loader.n_layers
         )
@@ -140,7 +135,7 @@ class FlashManager:
             mx.synchronize()
             
             # 4. Evict immediately
-            dummy_weights = {k: mx.array(0.0) for k in layer_weights.keys()}
+            dummy_weights = {k: mx.array(0.0) for k in layer_weights}
             _update_model_weights(instance, dummy_weights)
             
             # 5. Clear Metal cache
@@ -167,7 +162,7 @@ class FlashManager:
             _log(f"Model size: {total_bytes/1e9:.1f} GB (Budget: {self.config.ram_budget_gb} GB)")
 
 
-def _update_model_weights(model: Any, weights: Dict[str, Any]) -> None:
+def _update_model_weights(model: Any, weights: dict[str, Any]) -> None:
     try:
         model.load_weights(list(weights.items()), strict=False)
     except AttributeError:
@@ -177,8 +172,10 @@ def _update_model_weights(model: Any, weights: Dict[str, Any]) -> None:
             obj = model
             for part in parts[:-1]:
                 obj = getattr(obj, part, None)
-                if obj is None: break
-            if obj is not None: setattr(obj, parts[-1], arr)
+                if obj is None:
+                    break
+            if obj is not None:
+                setattr(obj, parts[-1], arr)
 
 def _log(msg: str) -> None:
     import sys

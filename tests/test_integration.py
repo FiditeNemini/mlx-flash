@@ -19,6 +19,7 @@ def test_flash_load_real_model(model_dir_path, use_flash, flash_config):
         pytest.skip("Pass --flash to enable this test")
 
     from pathlib import Path
+
     from mlx_engine_flash.loader import FlashModelLoader
 
     mdir = Path(model_dir_path)

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import struct
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -101,7 +100,7 @@ def tmp_model_dir(tmp_path_factory):
     hidden = 256
     inter = 512
     n_blocks_hh = (hidden * hidden) // 32
-    n_blocks_hi = (hidden * inter) // 32
+    (hidden * inter) // 32
 
     def rand_q4_blocks(n_blocks: int) -> bytes:
         rng = np.random.default_rng(42)

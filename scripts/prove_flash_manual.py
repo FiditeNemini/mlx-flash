@@ -1,11 +1,13 @@
 
-import os
-import time
 import argparse
+import os
 import subprocess
+import time
+
 import mlx.core as mx
-import mlx_lm
+
 from mlx_engine_flash import FlashConfig, FlashManager, FlashModelLoader
+
 
 def get_rss_gb():
     pid = os.getpid()
@@ -30,7 +32,7 @@ def manual_forward(model, inputs, flash_manager):
         mx.synchronize()
         
         # EVICT WEIGHTS
-        dummy_weights = {k: mx.array(0.0) for k in layer_weights.keys()}
+        dummy_weights = {k: mx.array(0.0) for k in layer_weights}
         flash_manager._loader._update_model_weights(layer, dummy_weights)
         mx.metal.clear_cache()
         
@@ -83,7 +85,7 @@ def main():
     
     print(f"\nForward pass complete in {elapsed:.2f}s")
     print(f"Peak RAM during execution: {peak_ram:.2f} GB")
-    print(f"Model size on disk: ~18.0 GB")
+    print("Model size on disk: ~18.0 GB")
     
     if peak_ram < 10.0:
         print("\n✅ SUCCESS: Ran 18GB model on 16GB Mac with < 10GB peak RAM.")

@@ -1,6 +1,7 @@
 """Tests for FlashConfig validation and construction."""
 
 import pytest
+
 from mlx_engine_flash.config import FlashConfig
 
 

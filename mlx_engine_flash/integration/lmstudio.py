@@ -18,18 +18,17 @@ The goal is a single-file diff that can be upstreamed as a PR.
 from __future__ import annotations
 
 import functools
-import os
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ..config import FlashConfig
 from ..manager import FlashManager
 
-_ORIGINAL_LOAD: Optional[Any] = None
-_MANAGER: Optional[FlashManager] = None
+_ORIGINAL_LOAD: Any | None = None
+_MANAGER: FlashManager | None = None
 
 
-def apply_flash_patch(config: Optional[FlashConfig] = None) -> None:
+def apply_flash_patch(config: FlashConfig | None = None) -> None:
     """
     Monkey-patch mlx_lm.load to route through FlashManager when appropriate.
 
@@ -46,11 +45,11 @@ def apply_flash_patch(config: Optional[FlashConfig] = None) -> None:
 
     try:
         import mlx_lm
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
             "mlx_lm is not installed.  "
             "Install the mlx-engine extras: pip install mlx-lm"
-        )
+        ) from e
 
     if _ORIGINAL_LOAD is not None:
         # Already patched; update config and return
@@ -61,24 +60,25 @@ def apply_flash_patch(config: Optional[FlashConfig] = None) -> None:
     _ORIGINAL_LOAD = mlx_lm.load
     _MANAGER = FlashManager(config)
 
-    @functools.wraps(_ORIGINAL_LOAD)
+    @functools.wraps(_ORIGINAL_LOAD)  # type: ignore
     def _patched_load(
         model: str,
         *args: Any,
         **kwargs: Any,
-    ) -> Tuple[Any, Any]:
+    ) -> Any:
         should_flash = _should_use_flash(model, config)
         if not should_flash:
+            assert _ORIGINAL_LOAD is not None
             return _ORIGINAL_LOAD(model, *args, **kwargs)
 
+        assert _MANAGER is not None
         if config.debug:
             import sys
             print(f"[flash] Flash Mode ACTIVE for {model}", file=sys.stderr)
 
         return _MANAGER.load(model, load_fn=_ORIGINAL_LOAD, **kwargs)
 
-    mlx_lm.load = _patched_load
-
+    mlx_lm.load = _patched_load  # type: ignore
 
 def remove_flash_patch() -> None:
     """Restore the original mlx_lm.load (useful for tests)."""

@@ -12,7 +12,6 @@ Usage:
 """
 
 import argparse
-import sys
 
 
 def main():
@@ -38,7 +37,9 @@ def main():
         )
         apply_flash_patch(cfg)
 
-    import mlx_lm, time
+    import time
+
+    import mlx_lm
     print(f"Loading MoE model: {args.model}")
     t0 = time.perf_counter()
     model, tokenizer = mlx_lm.load(args.model)

@@ -14,8 +14,6 @@ expert selection after routing (see MoEFlashHandler.prefetch_experts).
 from __future__ import annotations
 
 import threading
-import time
-from typing import Optional
 
 from .config import FlashConfig
 from .streamer import WeightStreamer

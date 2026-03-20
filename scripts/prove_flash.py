@@ -1,10 +1,12 @@
 
+import argparse
 import os
 import subprocess
 import time
-import argparse
+
 from mlx_engine_flash import FlashConfig
 from mlx_engine_flash.integration.lmstudio import apply_flash_patch
+
 
 def get_rss_gb():
     """Get the current process Resident Set Size in GB."""
@@ -39,7 +41,7 @@ def main():
     start_rss = get_rss_gb()
     print(f"Initial RAM: {start_rss:.2f} GB")
 
-    print(f"Loading model architecture...")
+    print("Loading model architecture...")
     t0 = time.perf_counter()
     model, tokenizer = mlx_lm.load(args.model)
     load_time = time.perf_counter() - t0
@@ -52,15 +54,15 @@ def main():
     peak_rss = load_rss
     
     # Generate more tokens to ensure we cycle through layers multiple times
-    for i, token in enumerate(mlx_lm.stream_generate(model, tokenizer, prompt="Explain gravity", max_tokens=30)):
+    for i, _token in enumerate(mlx_lm.stream_generate(model, tokenizer, prompt="Explain gravity", max_tokens=30)):
         current_rss = get_rss_gb()
         peak_rss = max(peak_rss, current_rss)
         if i % 2 == 0:
             print(f"  Token {i+1}, Current RAM: {current_rss:.2f} GB")
 
-    print(f"\nFinal Statistics:")
+    print("\nFinal Statistics:")
     print(f"Peak RAM Usage: {peak_rss:.2f} GB")
-    print(f"Model Size on Disk: ~5.00 GB")
+    print("Model Size on Disk: ~5.00 GB")
     
     if peak_rss < 4.0:
         print("\n✅ PROOF: Peak RAM is significantly lower than model size. Streaming is active.")

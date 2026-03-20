@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 
@@ -48,7 +48,7 @@ class FlashModelLoader:
     def __init__(self, model_dir: Path, config: FlashConfig) -> None:
         self.model_dir = Path(model_dir)
         self.config = config
-        self._streamer: Optional[WeightStreamer] = None
+        self._streamer: WeightStreamer | None = None
         self._model_config: dict = self._load_model_config()
         self._n_layers: int = self._detect_n_layers()
         self._is_moe: bool = self._detect_moe()
@@ -91,7 +91,7 @@ class FlashModelLoader:
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def open(self) -> "FlashModelLoader":
+    def open(self) -> FlashModelLoader:
         self._validate_quant()
         self._streamer = WeightStreamer(self.model_dir, self.config)
         # Prefetch the first N layers immediately
@@ -104,7 +104,7 @@ class FlashModelLoader:
             self._streamer.close()
             self._streamer = None
 
-    def __enter__(self) -> "FlashModelLoader":
+    def __enter__(self) -> FlashModelLoader:
         return self.open()
 
     def __exit__(self, *_) -> None:
@@ -118,7 +118,7 @@ class FlashModelLoader:
     def is_moe(self) -> bool:
         return self._is_moe
 
-    def get_non_layer_weights(self) -> Dict[str, np.ndarray]:
+    def get_non_layer_weights(self) -> dict[str, np.ndarray]:
         """
         Return weights that are NOT part of any transformer layer
         (embedding tables, final norm, lm_head, etc.).  These are always
@@ -135,7 +135,7 @@ class FlashModelLoader:
         self,
         layer_idx: int,
         prefetch_ahead: bool = True,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """
         Stream all weights for transformer layer *layer_idx*.
         If *prefetch_ahead*, also issues hints for layers up to
@@ -145,7 +145,7 @@ class FlashModelLoader:
 
         names = self._streamer.index.layer_tensor_names(layer_idx)
 
-        prefetch_names: List[str] = []
+        prefetch_names: list[str] = []
         if prefetch_ahead:
             for ahead in range(1, self.config.prefetch_layers + 1):
                 nxt = layer_idx + ahead
@@ -163,7 +163,7 @@ class FlashModelLoader:
 
         return weights
 
-    def iter_layers(self) -> Iterator[Tuple[int, Dict[str, np.ndarray]]]:
+    def iter_layers(self) -> Iterator[tuple[int, dict[str, np.ndarray]]]:
         """
         Iterate over all layers, streaming weights one layer at a time.
         Prefetches ahead and releases behind automatically.
@@ -172,7 +172,7 @@ class FlashModelLoader:
         for i in range(self._n_layers):
             yield i, self.get_layer_weights(i, prefetch_ahead=True)
 
-    def to_mlx(self, weights: Dict[str, np.ndarray]) -> Dict[str, "mx.array"]:
+    def to_mlx(self, weights: dict[str, np.ndarray]) -> dict[str, mx.array]:
         """Convert a dict of NumPy arrays to MLX arrays (no copy on unified mem)."""
         if not _HAS_MLX:
             raise ImportError("mlx is not installed")
