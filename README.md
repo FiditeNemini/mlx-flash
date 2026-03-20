@@ -48,6 +48,8 @@ This follows the approach pioneered in:
 - Apple Research: [*LLM in a Flash* (arXiv 2312.11514)](https://arxiv.org/abs/2312.11514)
 - [`flash-moe` by @danveloper](https://github.com/danveloper/flash-moe) (the first working OSS demo)
 
+> **Project Lineage:** The original `flash-moe` project successfully proved that streaming weights from NVMe could allow massive models to run on Apple Silicon. **The goal of this specific repository (`mlx-flash`) is to take that proven concept and provide a clean, drop-in integration for LM Studio** and other `mlx-engine` based frontends, turning a terminal demo into a one-click UI feature.
+
 ---
 
 ## Current Status: Tested Proof of Concept
