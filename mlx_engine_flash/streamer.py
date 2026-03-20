@@ -148,6 +148,18 @@ class SafetensorsIndex:
                 )
             for shard in shards:
                 self._index_shard(shard)
+        
+        # Auto-detect layer prefix
+        self._layer_prefix = self._detect_layer_prefix()
+
+    def _detect_layer_prefix(self) -> str:
+        """Heuristically find the common prefix for transformer layers."""
+        for n in self._entries:
+            if ".layers.0." in n:
+                return n.split(".layers.0.")[0] + ".layers.0."
+            if "layers.0." in n:
+                return "layers.0."
+        return "model.layers.0." # Fallback
 
     def _load_sharded(self, index_path: Path) -> None:
         idx = json.loads(index_path.read_text())
@@ -234,7 +246,9 @@ class SafetensorsIndex:
 
     def layer_tensor_names(self, layer_idx: int) -> list[str]:
         """Return all tensor names belonging to transformer layer *layer_idx*."""
-        prefix = f"model.layers.{layer_idx}."
+        prefix = self._layer_prefix.replace(".layers.0.", f".layers.{layer_idx}.")
+        if "layers.0." in self._layer_prefix and not self._layer_prefix.startswith("."):
+             prefix = self._layer_prefix.replace("layers.0.", f"layers.{layer_idx}.")
         return [n for n in self._entries if n.startswith(prefix)]
 
     def expert_tensor_names(self, layer_idx: int, expert_idx: int) -> list[str]:

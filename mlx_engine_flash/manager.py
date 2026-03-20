@@ -1,30 +1,38 @@
 
 from __future__ import annotations
 
+import functools
+import gc
+import os
+import psutil
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 try:
     import mlx.core as mx
+    import mlx.nn as nn
     _HAS_MLX = True
 except ImportError:
     _HAS_MLX = False
 
 try:
-    import mlx_lm  # noqa: F401
+    import mlx_lm
+    from mlx_lm.utils import generate_step
+    from mlx_lm.models import cache as cache_utils
     _HAS_MLX_LM = True
 except ImportError:
     _HAS_MLX_LM = False
 
 from .config import FlashConfig
-from .loader import FlashModelLoader
+from .loader import FlashModelLoader, _update_model_weights
 from .prefetch import WeightPrefetcher
 from .streamer import WeightStreamer
 
-
 class FlashManager:
     """
-    Orchestrates the Flash Weight Streaming process.
+    Synchronous Inference Engine for Flash Weight Streaming.
+    Manually orchestrates prefill and generation to bypass MLX graph limits.
     """
 
     def __init__(self, config: FlashConfig) -> None:
@@ -32,150 +40,150 @@ class FlashManager:
         self._loader: FlashModelLoader | None = None
         self._streamer: WeightStreamer | None = None
         self._prefetcher: WeightPrefetcher | None = None
+        self._metrics: dict[str, int] = {"cache_hits": 0, "cache_misses": 0}
+        self._shared_dummy = mx.array(0.0, dtype=mx.float16)
 
-    def load(
-        self,
-        model_path: str,
-        load_fn: Any | None = None,
-        **mlx_lm_kwargs: Any,
-    ) -> tuple[Any, Any]:
-        if not _HAS_MLX_LM:
-            raise ImportError("mlx_lm not installed")
-
+    def load(self, model_path: str, load_fn: Any | None = None, **mlx_lm_kwargs: Any) -> tuple[Any, Any]:
         import mlx_lm
-        if load_fn is None:
-            load_fn = mlx_lm.load
+        if load_fn is None: load_fn = mlx_lm.load
 
         self.config.validate()
         model_dir = Path(model_path)
-        self._check_ram(model_dir)
-
-        # ── Step 1: load skeleton ─────────────────────────────────────────
-        tokenizer_kwargs = mlx_lm_kwargs.pop("tokenizer_config", {})
-        mlx_lm_kwargs["lazy"] = True
         
-        # Load skeleton on CPU to avoid initial Metal memory checks
-        mx.set_default_device(mx.cpu)  # type: ignore
+        # 1. LOCK DOWN ENVIRONMENT
+        os.environ["MLX_MEMORY_MAPPING"] = "0"
+        
+        # 2. SKELETON LOAD (Small Dummies to bypass Metal checks)
+        original_mx_load = mx.load
+        def _dummy_load(*args, **kwargs):
+            w = original_mx_load(*args, **kwargs)
+            return { k: mx.array([0.0], v.dtype) for k, v in w.items() }
+        
+        original_load_weights = nn.Module.load_weights
+        nn.Module.load_weights = lambda self, weights, strict=False: self
+        
+        _log("Building tiny-weight skeleton...")
+        mx.load = _dummy_load
         try:
-            result = load_fn(
-                model_path,
-                tokenizer_config=tokenizer_kwargs,
-                **mlx_lm_kwargs,
-            )
-            model, tokenizer = result[0], result[1]
+            mlx_lm_kwargs["lazy"] = True
+            model, tokenizer = load_fn(str(model_dir), **mlx_lm_kwargs)
         finally:
-            mx.set_default_device(mx.gpu)  # type: ignore
+            mx.load = original_mx_load
+            nn.Module.load_weights = original_load_weights
 
-        # ── Step 2: setup streaming ───────────────────────────────────────
+        # 3. SETUP FLASH ASSETS
         self._loader = FlashModelLoader(model_dir, self.config).__enter__()
-        
-        # ── Step 3: Patch layers for synchronous forward pass ──────────────
-        self._patch_layers_for_sync_inference(model)
-
-        # ── Step 4: start prefetcher ──────────────────────────────────────
         self._streamer = self._loader._streamer
-        assert self._streamer is not None
-        self._prefetcher = WeightPrefetcher(
-            self._streamer, self.config, self._loader.n_layers
-        )
-        if self.config.prefetch_layers > 0:
-            self._prefetcher.start()
+        self._prefetcher = WeightPrefetcher(self._streamer, self.config, self._loader.n_layers, loader=self._loader)
+        if self.config.prefetch_layers > 0: self._prefetcher.start()
 
-        if self.config.debug:
-            _log(f"FlashManager: loaded {model_dir.name} ({self._loader.n_layers} layers)")
-
+        # 4. POPULATE PERMANENT WEIGHTS
+        _log("Loading permanent weights...")
+        idx = self._loader._streamer.index
+        perm_names = [n for n in idx.tensor_names() if "layers." not in n]
+        perm_weights = self._loader.to_mlx(self._streamer.stream_tensors(perm_names))
+        _update_model_weights(model, perm_weights)
+        
+        # 5. PATCH FOR SYNCHRONOUS FLOW
+        self._patch_layers_for_sync(model)
+        
+        # 6. SET LIMITS
+        mx.metal.set_cache_limit(1024 * 1024 * 1024)
+        mx.metal.set_wired_limit(1024 * 1024 * 1024)
+        
         return model, tokenizer
 
-    def _patch_layers_for_sync_inference(self, model: Any) -> None:
-        """
-        Intercepts each layer's forward pass to load/evict weights
-        and force synchronous evaluation.
-        """
-        layers = []
-        if hasattr(model, "backbone") and hasattr(model.backbone, "layers"):
-            layers = model.backbone.layers
-        elif hasattr(model, "layers"):
-            layers = model.layers
-        elif hasattr(model, "model") and hasattr(model.model, "layers"):
-            layers = model.model.layers
-        
-        if not layers:
-            return
-
+    def _patch_layers_for_sync(self, model: Any) -> None:
+        backbone = getattr(model, "model", getattr(model, "backbone", model))
+        layers = backbone.layers
         manager = self
-        
-        # We patch the CLASS level __call__ for the block type
-        # this is the only way to reliably intercept MLX modules
-        block_class = layers[0].__class__
-        original_block_call = block_class.__call__
 
-        def _sync_block_call(instance: Any, *args: Any, **kwargs: Any) -> Any:
-            # Check if this instance belongs to a model managed by us
-            mgr = getattr(instance, "_flash_manager", None)
-            idx = getattr(instance, "_flash_layer_idx", None)
-            
-            if mgr is None or idx is None:
-                return original_block_call(instance, *args, **kwargs)
-            
-            if mgr.config.debug:
-                _log(f"Layer {idx}: streaming weights...")
+        def _make_sync_call(original_call, layer_idx):
+            @functools.wraps(original_call)
+            def _sync_call(*args, **kwargs):
+                # i. Load
+                layer_weights = (manager._prefetcher.get_buffered_weights(layer_idx) if manager._prefetcher else None)
+                if layer_weights is None:
+                    layer_weights = manager._loader.get_layer_weights(layer_idx)
+                
+                prefix = manager._loader._streamer.index._layer_prefix.replace(".0.", f".{layer_idx}.")
+                if "layers.0." in manager._loader._streamer.index._layer_prefix and not manager._loader._streamer.index._layer_prefix.startswith("."):
+                    prefix = manager._loader._streamer.index._layer_prefix.replace("layers.0.", f"layers.{layer_idx}.")
+                
+                stripped = { (k[len(prefix):] if k.startswith(prefix) else k): v for k, v in layer_weights.items() }
+                if any(not isinstance(v, mx.array) for v in stripped.values()):
+                    stripped = manager._loader.to_mlx(stripped)
+                
+                _update_model_weights(layers[layer_idx], stripped)
+                if manager._prefetcher: manager._prefetcher.notify(layer_idx)
 
-            # 1. Load weights
-            layer_weights = mgr._loader.get_layer_weights(idx)
-            _update_model_weights(instance, mgr._loader.to_mlx(layer_weights))
-            
-            if mgr._prefetcher is not None:
-                mgr._prefetcher.notify(idx)
-            
-            # 2. Compute
-            output = original_block_call(instance, *args, **kwargs)
-            
-            # 3. Eval & Sync (CRITICAL for large models on low RAM)
-            mx.eval(output)
-            mx.synchronize()
-            
-            # 4. Evict immediately
-            dummy_weights = {k: mx.array(0.0) for k in layer_weights}
-            _update_model_weights(instance, dummy_weights)
-            
-            # 5. Clear Metal cache
-            mx.clear_cache()
-            
-            return output
+                # ii. Execute
+                output = original_call(*args, **kwargs)
+                
+                # iii. REALIZE
+                mx.eval(output)
+                mx.synchronize()
+                
+                # iv. EVICT
+                evict_map = { k: manager._shared_dummy for k in stripped }
+                _update_model_weights(layers[layer_idx], evict_map)
+                mx.clear_cache()
+                
+                return output
+            return _sync_call
 
-        block_class.__call__ = _sync_block_call
-
-        # Tag instances so the class-level patch knows what to do
         for i, layer in enumerate(layers):
-            layer._flash_layer_idx = i
-            layer._flash_manager = manager
+            layer.__call__ = _make_sync_call(layer.__call__, i)
+
+    def _chunked_prefill(self, model: Any, tokens: mx.array, chunk_size: int = 256) -> Any:
+        from mlx_lm.models.cache import make_prompt_cache
+        num_tokens = tokens.shape[1]
+        cache = make_prompt_cache(model)
+        
+        from mlx_lm.generate import maybe_quantize_kv_cache
+        maybe_quantize_kv_cache(cache, kv_bits=4, kv_group_size=64, quantized_kv_start=0)
+
+        _log(f"Starting chunked prefill: {num_tokens} tokens")
+        pos = 0
+        while pos < num_tokens:
+            end = min(pos + chunk_size, num_tokens)
+            chunk = tokens[:, pos:end]
+            
+            # LIFT LIMITS
+            safe_max = int(psutil.virtual_memory().total * 0.95)
+            mx.metal.set_cache_limit(safe_max)
+            mx.metal.set_wired_limit(safe_max)
+            
+            try:
+                model(chunk, cache=cache)
+                mx.eval([c.state for c in cache])
+                mx.synchronize()
+            finally:
+                limit = 1024 * 1024 * 1024
+                mx.metal.set_cache_limit(limit)
+                mx.metal.set_wired_limit(limit)
+                mx.clear_cache()
+            
+            pos = end
+        return cache
+
+    def generate(self, model: Any, tokenizer: Any, prompt: str, **kwargs: Any) -> Generator[Any, None, None]:
+        if isinstance(prompt, str):
+            tokens = mx.array(tokenizer.encode(prompt))[None]
+        else:
+            tokens = prompt
+            
+        prompt_cache = self._chunked_prefill(model, tokens, chunk_size=32)
+
+        from mlx_lm.utils import generate_step
+        for response in generate_step(mx.array([], dtype=mx.uint32)[None], model, tokenizer=tokenizer, prompt_cache=prompt_cache, **kwargs):
+            yield response
+            mx.synchronize()
+            mx.clear_cache()
 
     def shutdown(self) -> None:
-        if self._prefetcher is not None:
-            self._prefetcher.stop()
-        if self._loader is not None:
-            self._loader.close()
-
-    def _check_ram(self, model_dir: Path) -> None:
-        total_bytes = sum(f.stat().st_size for f in model_dir.glob("*.safetensors"))
-        if self.config.debug:
-            _log(f"Model size: {total_bytes/1e9:.1f} GB (Budget: {self.config.ram_budget_gb} GB)")
-
-
-def _update_model_weights(model: Any, weights: dict[str, Any]) -> None:
-    try:
-        model.load_weights(list(weights.items()), strict=False)
-    except AttributeError:
-        # Manual fallback
-        for name, arr in weights.items():
-            parts = name.split(".")
-            obj = model
-            for part in parts[:-1]:
-                obj = getattr(obj, part, None)
-                if obj is None:
-                    break
-            if obj is not None:
-                setattr(obj, parts[-1], arr)
+        if self._prefetcher: self._prefetcher.stop()
+        if self._loader: self._loader.close()
 
 def _log(msg: str) -> None:
     import sys

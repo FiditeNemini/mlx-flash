@@ -135,16 +135,7 @@ class MoERouter:
 
 class MoEFlashHandler:
     """
-    Orchestrates MoE routing + selective expert streaming.
-
-    Typical call order per layer per forward pass::
-
-        handler.set_layer(layer_idx)
-        expert_idxs, expert_wts = handler.route(hidden_states)
-        needed = handler.unique_experts(expert_idxs)
-        handler.prefetch_experts(needed)                 # async I/O hint
-        expert_weights = handler.load_experts(needed)   # actual read
-        # ... compute expert FFNs and combine
+    Orchestrates MoE routing + selective expert streaming with LRU cache.
     """
 
     def __init__(
@@ -165,38 +156,41 @@ class MoEFlashHandler:
             for layer_idx, rw in router_weights_by_layer.items()
         }
         self._current_layer: int = 0
-
-    def set_layer(self, layer_idx: int) -> None:
-        self._current_layer = layer_idx
-
-    def route(
-        self,
-        hidden_states: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Route *hidden_states* through this layer's router."""
-        router = self._routers.get(self._current_layer)
-        if router is None:
-            raise KeyError(f"No router for layer {self._current_layer}")
-        return router.route(hidden_states)
-
-    def unique_experts(self, expert_indices: np.ndarray) -> list[int]:
-        router = self._routers[self._current_layer]
-        return router.unique_experts(expert_indices)
-
-    def prefetch_experts(self, expert_idxs: list[int]) -> None:
-        """Issue page-cache prefetch for the given experts in current layer."""
-        self._streamer.prefetch_experts(self._current_layer, expert_idxs)
+        
+        # Expert LRU Cache: (layer_idx, expert_idx) -> {tensor_name: mx.array}
+        self._cache: dict[tuple[int, int], dict[str, Any]] = {}
+        self._lru: list[tuple[int, int]] = []
 
     def load_experts(
         self, expert_idxs: list[int]
-    ) -> dict[int, dict[str, np.ndarray]]:
+    ) -> dict[int, dict[str, Any]]:
         """
-        Stream weights for each expert index in *expert_idxs*.
-        Returns {expert_idx: {tensor_name: np.ndarray}}.
+        Stream weights for each expert index in *expert_idxs* with LRU caching.
+        Returns {expert_idx: {tensor_name: mx.array}}.
         """
-        result: dict[int, dict[str, np.ndarray]] = {}
-        all_names: list[str] = []
+        result: dict[int, dict[str, Any]] = {}
+        needed_idxs: list[int] = []
+        
+        # 1. Check cache
         for eidx in expert_idxs:
+            key = (self._current_layer, eidx)
+            if key in self._cache:
+                result[eidx] = self._cache[key]
+                # Update LRU
+                self._lru.remove(key)
+                self._lru.append(key)
+                if self._config.debug:
+                    import sys
+                    print(f"[flash] MoE Cache HIT: Layer {self._current_layer} Expert {eidx}", file=sys.stderr)
+            else:
+                needed_idxs.append(eidx)
+
+        if not needed_idxs:
+            return result
+
+        # 2. Load missing experts from disk
+        all_names: list[str] = []
+        for eidx in needed_idxs:
             names = self._streamer.index.expert_tensor_names(
                 self._current_layer, eidx
             )
@@ -204,13 +198,34 @@ class MoEFlashHandler:
 
         all_weights = self._streamer.stream_tensors(all_names)
 
-        for eidx in expert_idxs:
+        for eidx in needed_idxs:
             prefix = (f"model.layers.{self._current_layer}"
                       f".mlp.experts.{eidx}.")
-            result[eidx] = {
+            expert_weights = {
                 k[len(prefix):]: v
                 for k, v in all_weights.items()
                 if k.startswith(prefix)
             }
+            
+            # Convert to MLX immediately
+            mlx_expert = {k: mx.array(v) for k, v in expert_weights.items()}
+            # Bitcast BF16 if needed (match loader.py logic)
+            for k, v in expert_weights.items():
+                if v.dtype == np.uint16:
+                    mlx_expert[k] = mlx_expert[k].view(mx.bfloat16)
+            
+            # Add to cache (and result)
+            key = (self._current_layer, eidx)
+            self._cache[key] = mlx_expert
+            self._lru.append(key)
+            result[eidx] = mlx_expert
+
+        # 3. Enforce cache size limit
+        while len(self._lru) > self._config.expert_cache_size:
+            oldest_key = self._lru.pop(0)
+            del self._cache[oldest_key]
+            if self._config.debug:
+                import sys
+                print(f"[flash] MoE Cache EVICT: Layer {oldest_key[0]} Expert {oldest_key[1]}", file=sys.stderr)
 
         return result
