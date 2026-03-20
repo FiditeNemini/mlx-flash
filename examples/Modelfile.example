@@ -1,0 +1,39 @@
+# Modelfile — Flash Weight Streaming example
+# Copy this as `Modelfile` in your model directory or reference it
+# from your Ollama/LM Studio launcher.
+
+# Required: path to an mlx-converted model
+FROM /path/to/your/model-here
+
+# System prompt (optional)
+SYSTEM "You are a helpful, concise assistant."
+
+# ── Flash Weight Streaming directives ───────────────────────────────────────
+# Enable Flash Mode (run large models on low-RAM Macs)
+FLASH true
+
+# Resident RAM budget for weight pages (default 10 GB)
+# Lower = less RAM but more disk I/O per token
+# Higher = faster but needs more free RAM
+FLASH_RAM_GB 10
+
+# Parallel pread() threads for weight streaming
+# 4 is good for internal NVMe; raise to 6-8 for Thunderbolt RAID
+FLASH_THREADS 4
+
+# How many transformer layers ahead to prefetch while computing current
+# 2 hides I/O on ~4 GB/s drives; 4 for fast RAID
+FLASH_PREFETCH_LAYERS 2
+
+# Warn if model quantisation is below this many bits (0 = no warning)
+FLASH_QUANT_WARN_BELOW 4
+
+# MoE: override the model's top-K experts per token (0 = use model default)
+# Lower K = faster but lower quality for MoE models
+# FLASH_TOP_K 2
+
+# Page eviction strategy after each layer
+# free     = macOS MADV_FREE (fastest, recommended)
+# dontneed = POSIX MADV_DONTNEED (advisory)
+# none     = trust OS LRU entirely (most compatible)
+FLASH_EVICTION free

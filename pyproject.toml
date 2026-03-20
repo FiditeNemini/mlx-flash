@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlx-flash"
+version = "0.1.0"
+description = "Flash Weight Streaming (low-RAM mode) for LM Studio / mlx-engine"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+keywords = ["mlx", "llm", "apple-silicon", "flash-attention", "moe", "lm-studio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "mlx>=0.20.0",
+    "mlx-lm>=0.20.0",
+    "numpy>=1.26",
+    "safetensors>=0.4.3",
+    "huggingface-hub>=0.23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "types-setuptools",
+    "pytest-cov",
+]
+metal = [
+    # Metal compilation deps are system-level (xcrun metallib); nothing extra on PyPI
+]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/mlx-flash"
+Repository = "https://github.com/YOUR_USERNAME/mlx-flash"
+Issues = "https://github.com/YOUR_USERNAME/mlx-flash/issues"
+
+[project.scripts]
+flash-bench = "benchmarks.bench_flash:cli"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["E", "F", "I", "UP", "N", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = ["-v", "--tb=short"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mlx_engine_flash*", "benchmarks*", "examples*"]
