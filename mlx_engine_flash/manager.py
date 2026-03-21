@@ -81,24 +81,45 @@ class FlashManager:
         # 2. SKELETON LOAD (No weights loaded from disk)
         _log("Building architecture-only skeleton...")
         model, tokenizer = _load_skeleton_only(str(model_dir))
+        
+        # 3. QUANTIZE SKELETON (If needed)
+        config = load_config(model_dir)
+        if (quantization := config.get("quantization")) is not None:
+            _log(f"Quantizing skeleton: {quantization['bits']}-bit")
+            nn.quantize(
+                model,
+                group_size=quantization["group_size"],
+                bits=quantization["bits"],
+                mode=quantization.get("mode", "affine"),
+            )
 
-        # 3. SETUP FLASH ASSETS
+        # 4. SETUP FLASH ASSETS
         self._loader = FlashModelLoader(model_dir, self.config).__enter__()
         self._streamer = self._loader._streamer
         self._prefetcher = WeightPrefetcher(self._streamer, self.config, self._loader.n_layers, loader=self._loader)
         if self.config.prefetch_layers > 0: self._prefetcher.start()
 
-        # 4. POPULATE PERMANENT WEIGHTS
+        # 5. POPULATE PERMANENT WEIGHTS
         _log("Loading permanent weights...")
         idx = self._loader._streamer.index
         perm_names = [n for n in idx.tensor_names() if "layers." not in n]
-        perm_weights = self._loader.to_mlx(self._streamer.stream_tensors(perm_names))
-        _update_model_weights(model, perm_weights)
+        weights = self._streamer.stream_tensors(perm_names)
         
-        # 5. PATCH FOR SYNCHRONOUS FLOW
+        # Handle sanitization (e.g. stacking experts, custom dequant)
+        if hasattr(model, "sanitize"):
+            _log("Sanitizing weights...")
+            # We need to use mx.arrays for sanitization if the model expects them
+            mlx_weights = self._loader.to_mlx(weights)
+            mlx_weights = model.sanitize(mlx_weights)
+            _update_model_weights(model, mlx_weights)
+        else:
+            perm_weights = self._loader.to_mlx(weights)
+            _update_model_weights(model, perm_weights)
+        
+        # 6. PATCH FOR SYNCHRONOUS FLOW
         self._patch_layers_for_sync(model)
         
-        # 6. SET LIMITS
+        # 7. SET LIMITS
         mx.metal.set_cache_limit(1024 * 1024 * 1024)
         mx.metal.set_wired_limit(1024 * 1024 * 1024)
         
@@ -136,9 +157,23 @@ class FlashManager:
                 mx.synchronize()
                 
                 # iv. EVICT
+                # 1. Replace weights in model first (drops refcounts to the actual arrays)
                 evict_map = { k: manager._shared_dummy for k in stripped }
                 _update_model_weights(layers[layer_idx], evict_map)
-                mx.clear_cache()
+                
+                # 2. Delete our references to the arrays
+                del stripped
+                if layer_weights is not None:
+                    del layer_weights
+                
+                # 3. Force GC to release memoryview references (crucial for zero-copy mmap)
+                gc.collect()
+                
+                # 4. Release pages in page cache
+                manager._streamer.release_layer(layer_idx)
+                
+                # 5. Return GPU allocation
+                mx.metal.clear_cache()
                 
                 return output
             return _sync_call
@@ -173,7 +208,7 @@ class FlashManager:
                 limit = 1024 * 1024 * 1024
                 mx.metal.set_cache_limit(limit)
                 mx.metal.set_wired_limit(limit)
-                mx.clear_cache()
+                mx.metal.clear_cache()
             
             pos = end
         return cache
@@ -190,7 +225,7 @@ class FlashManager:
         for response in generate_step(mx.array([], dtype=mx.uint32)[None], model, tokenizer=tokenizer, prompt_cache=prompt_cache, **kwargs):
             yield response
             mx.synchronize()
-            mx.clear_cache()
+            mx.metal.clear_cache()
 
     def shutdown(self) -> None:
         if self._prefetcher: self._prefetcher.stop()
