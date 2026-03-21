@@ -143,14 +143,19 @@ Benchmarked on **M4 MacBook Air 16 GB** with internal NVMe.
 
 ---
 
+## Known Issues (v0.1.0)
+* **Synchronous Prefetch**: The current `madvise` prefetch hint is issued synchronously before layer execution. Future versions (0.2+) will move this to a background thread to hide I/O latency completely.
+* **Disk KV Cache (Experimental)**: Offloading the KV cache to SSD is functional but may impact performance on slower drives (e.g., external USB-C).
+* **First-Token Sampling**: In v0.1.0, the very first token of a prompt is always sampled using the sampler (temp/top_p), but subsequent chunks in very long prompts may show slight variations vs. standard MLX.
+
+---
+
 ## Output Quality
 
 ### No additional quantisation loss
 Flash Mode uses the model's weights as-is with no additional quantisation. Output is numerically equivalent to standard `mlx-lm` inference when using the same model, sampling parameters, and random seed.
 
 **Caveat**: Per-layer `mx.eval()` may occasionally produce microscopic differences in floating-point results compared to fused multi-layer evaluation due to the specific order of floating-point operations. In practice, generated text is perceptually identical.
-
----
 
 ## Quick Start
 
@@ -163,8 +168,8 @@ pip install -e .
 
 ### 2. Using via Python
 ```python
-from mlx_engine_flash import FlashConfig
-from mlx_engine_flash.integration.lmstudio import apply_flash_patch
+from mlx_flash import FlashConfig
+from mlx_flash.integration.lmstudio import apply_flash_patch
 import mlx_lm
 
 # 1. Enable Flash Mode system-wide for mlx_lm
@@ -178,8 +183,6 @@ for response in mlx_lm.stream_generate(model, tokenizer, "Tell me a joke"):
     print(response.text, end="", flush=True)
 ```
 
----
-
 ## LM Studio Usage
 
 ### Python Integration (Current)
@@ -187,6 +190,22 @@ You can use `mlx-flash` today to patch `mlx-lm` scripts or backends.
 
 ### LM Studio UI (Roadmap)
 The **☑ Enable Flash Weight Streaming** checkbox is a proposed feature for the official LM Studio MLX engine. See `docs/lmstudio_integration.md` for the technical blueprint. The checkbox is not yet available in the public release; PRs to `lmstudio-ai/mlx-engine` are welcome.
+
+---
+
+## Benchmark Your Hardware
+Performance varies significantly depending on your SSD speed and unified memory bandwidth:
+* **M1/M2/M3 Air (Internal NVMe)**: Expect 4-8 tok/s on 30B models.
+* **M4 Pro/Max**: High memory bandwidth significantly improves layer transition speeds.
+* **External Drives**: Running models via Thunderbolt RAIDs is viable; standard USB-C Gen 2 (10Gbps) will be bottlenecked by I/O.
+
+---
+
+## Roadmap
+Detailed milestones are available in [ROADMAP.md](ROADMAP.md).
+- **v0.1.x**: Stability, bug fixes, and PyPI release.
+- **v0.2.0**: Asynchronous prefetching and adaptive RAM budgeting.
+- **v0.3.0**: Parallel Expert Streaming for MoE models (Mixtral/DeepSeek).
 
 ---
 

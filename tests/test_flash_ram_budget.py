@@ -13,7 +13,7 @@ import mlx.core as mx
 import psutil
 import pytest
 
-from mlx_engine_flash import FlashConfig, FlashGenerationLoop
+from mlx_flash import FlashConfig, FlashGenerationLoop
 
 
 def get_rss_mb() -> float:

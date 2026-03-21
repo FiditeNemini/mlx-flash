@@ -1,4 +1,4 @@
-from mlx_engine_flash.diagnostics import RAMProfiler
+from mlx_flash.diagnostics import RAMProfiler
 
 
 def test_ram_profiler_snapshot_valid():

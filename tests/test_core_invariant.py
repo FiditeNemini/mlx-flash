@@ -75,7 +75,7 @@ class TestFlashInvariant:
         # Compute single layer size
         import importlib.util
 
-        from mlx_engine_flash.generation import FlashLLM
+        from mlx_flash.generation import FlashLLM
         if importlib.util.find_spec("mlx_lm") is None:
             pytest.skip("mlx_lm not installed")
         import mlx_lm
@@ -146,7 +146,7 @@ class TestFlashInvariant:
         """
         import importlib.util
 
-        from mlx_engine_flash.manager import FlashManager
+        from mlx_flash.manager import FlashManager
         if importlib.util.find_spec("mlx_lm") is None:
             pytest.skip("mlx_lm not installed")
         
@@ -182,7 +182,7 @@ class TestFlashInvariant:
         
         If this fails: non-deterministic Metal ops, or cache corruption.
         """
-        from mlx_engine_flash.generation import FlashGenerationLoop
+        from mlx_flash.generation import FlashGenerationLoop
         
         mx.random.seed(42)
         loop1 = FlashGenerationLoop(tmp_model_dir, flash_config)

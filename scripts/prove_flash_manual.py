@@ -6,7 +6,7 @@ import time
 
 import mlx.core as mx
 
-from mlx_engine_flash import FlashConfig, FlashManager, FlashModelLoader
+from mlx_flash import FlashConfig, FlashManager, FlashModelLoader
 
 
 def get_rss_gb():
@@ -94,6 +94,6 @@ def main():
 
 if __name__ == "__main__":
     # Add _update_model_weights to loader for convenience in this script
-    from mlx_engine_flash.manager import _update_model_weights
+    from mlx_flash.manager import _update_model_weights
     FlashModelLoader._update_model_weights = staticmethod(_update_model_weights)
     main()

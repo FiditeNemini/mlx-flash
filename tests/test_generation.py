@@ -1,5 +1,5 @@
-from mlx_engine_flash.config import FlashConfig
-from mlx_engine_flash.generation import FlashGenerationLoop
+from mlx_flash.config import FlashConfig
+from mlx_flash.generation import FlashGenerationLoop
 
 
 def test_flash_generation_non_empty(tmp_model_dir):

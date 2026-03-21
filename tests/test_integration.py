@@ -14,7 +14,7 @@ Run with:
 
 
 def test_modelfile_directive():
-    from mlx_engine_flash.integration.modelfile import parse_flash_directives
+    from mlx_flash.integration.modelfile import parse_flash_directives
     text = """
 FROM /models/Qwen2.5-72B-Q4_K_M
 FLASH true
@@ -32,7 +32,7 @@ FLASH_EVICTION dontneed
 
 
 def test_modelfile_no_flash():
-    from mlx_engine_flash.integration.modelfile import parse_flash_directives
+    from mlx_flash.integration.modelfile import parse_flash_directives
     text = "FROM /models/some-model\nSYSTEM You are helpful.\n"
     cfg = parse_flash_directives(text)
     assert cfg.enabled is False
@@ -45,8 +45,8 @@ def test_flash_peak_ram_below_2gb(tmp_model_dir):
     import mlx_lm
     import psutil
 
-    from mlx_engine_flash.config import FlashConfig
-    from mlx_engine_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
+    from mlx_flash.config import FlashConfig
+    from mlx_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
 
     proc = psutil.Process(os.getpid())
     # Ensure any previous patch is removed

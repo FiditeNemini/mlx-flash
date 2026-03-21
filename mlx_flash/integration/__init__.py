@@ -1,5 +1,5 @@
 """
-mlx_engine_flash.integration
+mlx_flash.integration
 =============================
 Adapters that connect Flash Mode to external hosts:
 

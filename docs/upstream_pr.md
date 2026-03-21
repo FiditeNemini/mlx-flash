@@ -22,7 +22,7 @@ Immediately before the generation loop starts, we wrap the model in the `FlashLL
 
 ```diff
 + if flash_enabled:
-+     from mlx_engine_flash.generation import FlashLLM
++     from mlx_flash.generation import FlashLLM
 +     model = FlashLLM(model, flash_config)
 + 
   for response in generate_step(prompt, model, ...):

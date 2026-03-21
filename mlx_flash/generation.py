@@ -41,7 +41,7 @@ class FlashLLM(nn.Module):
                 return list(layers)
         raise AttributeError(
             f"Cannot find transformer layers in {type(model).__name__}. "
-            f"Attributes: {list(vars(model))}"
+            f"Attributes: {dir(model)}"
         )
     
     def _build_pre_layer_fn(self, model):
@@ -222,8 +222,8 @@ class FlashGenerationLoop:
              config = FlashConfig()
         self.config = config
         
-        if isinstance(model_or_path, str):
-            self.model, self.tokenizer = mlx_lm.load(model_or_path, lazy=True)
+        if isinstance(model_or_path, (str, Path)):
+            self.model, self.tokenizer = mlx_lm.load(str(model_or_path), lazy=True)
             self.flash_model = FlashLLM(self.model, config)
         elif isinstance(model_or_path, FlashLLM):
             self.flash_model = model_or_path

@@ -25,8 +25,8 @@ def bench_load(model_path: str, flash: bool, ram_budget: float = 10.0) -> dict:
     import tracemalloc
 
     if flash:
-        from mlx_engine_flash import FlashConfig
-        from mlx_engine_flash.integration.lmstudio import (
+        from mlx_flash import FlashConfig
+        from mlx_flash.integration.lmstudio import (
             apply_flash_patch,
             remove_flash_patch,
         )
@@ -47,7 +47,7 @@ def bench_load(model_path: str, flash: bool, ram_budget: float = 10.0) -> dict:
     except Exception as e:
         tracemalloc.stop()
         if flash:
-            from mlx_engine_flash.integration.lmstudio import remove_flash_patch
+            from mlx_flash.integration.lmstudio import remove_flash_patch
             remove_flash_patch()
         return {"load_s": None, "peak_ram_mb": None, "error": str(e)}
 
@@ -113,7 +113,7 @@ def cli() -> None:
         print(f"  Gen:  {gen['tok_per_s']:.1f} tok/s  ({gen['tokens']} tokens)")
 
         if flash:
-            from mlx_engine_flash.integration.lmstudio import remove_flash_patch
+            from mlx_flash.integration.lmstudio import remove_flash_patch
             remove_flash_patch()
 
         del r["model"], r["tokenizer"]

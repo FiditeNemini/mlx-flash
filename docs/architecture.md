@@ -106,7 +106,7 @@ The deferred 3-command-buffer pipeline (load → dequant → compute) allows I/O
 and GPU to run concurrently for consecutive experts.
 
 ## File Structure
-mlx_engine_flash/
+mlx_flash/
 ├── __init__.py          — public API
 ├── config.py            — FlashConfig dataclass
 ├── page_cache.py        — madvise() wrappers (macOS)

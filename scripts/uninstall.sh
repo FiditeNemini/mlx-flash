@@ -19,7 +19,7 @@ fi
 
 # 3. Clean up Metal kernels
 echo "Cleaning up compiled Metal kernels..."
-find mlx_engine_flash/kernels -name "*.metallib" -delete
+find mlx_flash/kernels -name "*.metallib" -delete
 
 # 4. Clean up Python cache
 echo "Cleaning up Python cache files..."

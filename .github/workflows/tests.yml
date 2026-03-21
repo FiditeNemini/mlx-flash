@@ -40,10 +40,10 @@ jobs:
           python -c "import mlx_lm; print(f'mlx-lm: {mlx_lm.__version__}')"
       
       - name: Lint (ruff)
-        run: ruff check mlx_engine_flash/ tests/ examples/ benchmarks/
+        run: ruff check mlx_flash/ tests/ examples/ benchmarks/
       
       - name: Type check (mypy)
-        run: mypy mlx_engine_flash/ --ignore-missing-imports --no-strict-optional
+        run: mypy mlx_flash/ --ignore-missing-imports --no-strict-optional
         continue-on-error: false  # Type errors are real bugs
       
       - name: Run core invariant tests (most important)
@@ -56,17 +56,17 @@ jobs:
           pytest tests/ -v --tb=short \
             --ignore=tests/test_core_invariant.py \
             -k "not integration and not real_model and not nemotron" \
-            --cov=mlx_engine_flash \
+            --cov=mlx_flash \
             --cov-report=term-missing \
             --cov-fail-under=60  # Fail if coverage drops below 60%
       
       - name: Verify import works
         run: |
           python -c "
-          from mlx_engine_flash import FlashConfig, FlashManager
-          from mlx_engine_flash.generation import FlashLLM, FlashGenerationLoop
-          from mlx_engine_flash.integration.lmstudio import apply_flash_patch
-          from mlx_engine_flash.integration.modelfile import parse_flash_directives
+          from mlx_flash import FlashConfig, FlashManager
+          from mlx_flash.generation import FlashLLM, FlashGenerationLoop
+          from mlx_flash.integration.lmstudio import apply_flash_patch
+          from mlx_flash.integration.modelfile import parse_flash_directives
           print('All imports successful')
           "
       
@@ -75,8 +75,8 @@ jobs:
           python -c "
           import mlx_lm
           orig_load = mlx_lm.load
-          from mlx_engine_flash import FlashConfig
-          from mlx_engine_flash.integration.lmstudio import apply_flash_patch
+          from mlx_flash import FlashConfig
+          from mlx_flash.integration.lmstudio import apply_flash_patch
           config = FlashConfig(enabled=False)
           apply_flash_patch(config)
           # Note: we currently patch mlx_lm.load even if disabled, but it should 

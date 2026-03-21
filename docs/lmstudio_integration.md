@@ -21,8 +21,8 @@ def load_model(model_path: str, config: dict) -> tuple:
 def load_model(model_path: str, config: dict) -> tuple:
     flash_enabled = config.get("flash_mode", False)
     if flash_enabled:
-        from mlx_engine_flash import FlashConfig
-        from mlx_engine_flash.integration.lmstudio import apply_flash_patch
+        from mlx_flash import FlashConfig
+        from mlx_flash.integration.lmstudio import apply_flash_patch
         flash_cfg = FlashConfig(
             enabled=True,
             ram_budget_gb=config.get("flash_ram_gb", 10.0),

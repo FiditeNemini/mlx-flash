@@ -3,10 +3,10 @@
 compile_kernels.py — AOT-compile Flash Metal kernels to .metallib.
 
 Usage:
-    python mlx_engine_flash/kernels/compile_kernels.py [--verbose]
+    python mlx_flash/kernels/compile_kernels.py [--verbose]
 
 Requires Xcode Command Line Tools (xcrun xcoderun metallib).
-Produces: mlx_engine_flash/kernels/flash_kernels.metallib
+Produces: mlx_flash/kernels/flash_kernels.metallib
 """
 
 import argparse

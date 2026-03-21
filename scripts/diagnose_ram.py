@@ -6,8 +6,8 @@ import psutil
 import mlx.core as mx
 from pathlib import Path
 from mlx_lm.utils import load_config
-from mlx_engine_flash.manager import FlashManager, FlashConfig
-from mlx_engine_flash.diagnostics import RAMProfiler
+from mlx_flash.manager import FlashManager, FlashConfig
+from mlx_flash.diagnostics import RAMProfiler
 
 def estimate_layer_size(model_path: str) -> float:
     path = Path(model_path)

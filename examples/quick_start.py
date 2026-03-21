@@ -23,8 +23,8 @@ def main():
     args = parser.parse_args()
 
     if args.flash:
-        from mlx_engine_flash import FlashConfig
-        from mlx_engine_flash.integration.lmstudio import apply_flash_patch
+        from mlx_flash import FlashConfig
+        from mlx_flash.integration.lmstudio import apply_flash_patch
         cfg = FlashConfig(enabled=True, ram_budget_gb=args.ram, debug=True)
         apply_flash_patch(cfg)
         print(f"[demo] Flash Mode ON  (RAM budget: {args.ram} GB)")

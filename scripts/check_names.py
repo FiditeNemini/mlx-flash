@@ -1,4 +1,4 @@
-from mlx_engine_flash import FlashConfig, FlashModelLoader
+from mlx_flash import FlashConfig, FlashModelLoader
 from pathlib import Path
 
 def check_names():

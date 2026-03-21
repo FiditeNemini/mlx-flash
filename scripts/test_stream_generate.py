@@ -5,8 +5,8 @@ import psutil
 import os
 import mlx.core as mx
 from mlx_lm import stream_generate
-from mlx_engine_flash import FlashConfig
-from mlx_engine_flash.integration.lmstudio import apply_flash_patch
+from mlx_flash import FlashConfig
+from mlx_flash.integration.lmstudio import apply_flash_patch
 
 def get_rss_gb():
     process = psutil.Process(os.getpid())

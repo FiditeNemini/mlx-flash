@@ -181,7 +181,7 @@ def reset_metal_state():
 
 @pytest.fixture
 def flash_config():
-    from mlx_engine_flash.config import FlashConfig
+    from mlx_flash.config import FlashConfig
     return FlashConfig(
         enabled=True,
         ram_budget_gb=1.0,   # Very tight budget to catch regressions

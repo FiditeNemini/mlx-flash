@@ -40,7 +40,7 @@ echo "✓  Installed mlx-flash[dev]"
 if command -v xcrun &>/dev/null; then
     echo ""
     echo "Xcode CLT found — compiling Metal kernels..."
-    python mlx_engine_flash/kernels/compile_kernels.py && echo "✓  Metal kernels compiled"
+    python mlx_flash/kernels/compile_kernels.py && echo "✓  Metal kernels compiled"
 else
     echo "⚠️  Xcode CLT not found — Metal kernels will use MLX fallbacks."
     echo "   Install with: xcode-select --install"

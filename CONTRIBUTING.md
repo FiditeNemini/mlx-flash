@@ -24,7 +24,7 @@ scripts/test_quick.sh
 * Target the `main` branch.
 * Keep each PR focused; one feature / fix per PR.
 * All public functions need docstrings and type annotations.
-* Run `ruff check . && mypy mlx_engine_flash` before opening a PR.
+* Run `ruff check . && mypy mlx_flash` before opening a PR.
 * Add or update tests for every behavioural change.
 * For Metal kernel changes, include before/after `bench_flash.py` numbers.
 

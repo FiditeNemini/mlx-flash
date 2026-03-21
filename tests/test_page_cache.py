@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from mlx_engine_flash.page_cache import (
+from mlx_flash.page_cache import (
     MADV_WILLNEED,
     madvise_range,
     prefetch,

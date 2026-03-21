@@ -1,5 +1,5 @@
 """
-mlx_engine_flash.kernels
+mlx_flash.kernels
 ========================
 Optional AOT-compiled Metal kernels for accelerated flash operations.
 
@@ -7,7 +7,7 @@ If the kernels are not compiled (no .metallib found), every function here
 falls back to pure MLX / NumPy equivalents — results are bit-identical.
 
 Compile with:
-    python mlx_engine_flash/kernels/compile_kernels.py
+    python mlx_flash/kernels/compile_kernels.py
 
 After compilation, kernels/ will contain flash_kernels.metallib which is
 loaded once at import time.
