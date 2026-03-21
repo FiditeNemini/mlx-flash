@@ -272,8 +272,6 @@ python examples/quick_start.py --model /path/to/model --flash
 flash-monitor
 ```
 
-![Live Monitor Demo](docs/assets/monitor_mockup.png)
-
 ---
 
 ## Modelfile Usage
