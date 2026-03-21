@@ -1,5 +1,6 @@
 import mlx.core as mx
 
+
 class MockCache:
     def __init__(self, arr):
         self.arr = arr

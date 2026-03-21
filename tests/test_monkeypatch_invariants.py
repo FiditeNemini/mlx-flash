@@ -1,9 +1,11 @@
 
-import mlx_lm
 import mlx.core as mx
+import mlx_lm
 import pytest
+
 from mlx_flash import FlashConfig
 from mlx_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
+
 
 def test_apply_flash_patch_disabled_does_not_clobber_metal():
     """Verify that enabled=False doesn't touch mx.metal limits."""

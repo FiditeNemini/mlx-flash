@@ -53,7 +53,7 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
         model.manager = mgr
         return model, tokenizer
 
-    mlx_lm.load = _flash_load
+    mlx_lm.load = _flash_load  # type: ignore
 
     # 2. Patch stream_generate
     def _flash_stream_generate(model, tokenizer, prompt, **kwargs):
@@ -75,7 +75,7 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
         else:
             yield from _ORIGINAL_STREAM_GENERATE(model, tokenizer, prompt, **kwargs)
 
-    mlx_lm.stream_generate = _flash_stream_generate
+    mlx_lm.stream_generate = _flash_stream_generate  # type: ignore
 
     # 3. Patch generate
     if _ORIGINAL_GENERATE:
@@ -89,7 +89,7 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
                 return full_text
             else:
                 return _ORIGINAL_GENERATE(model, tokenizer, prompt, **kwargs)
-        mlx_lm.generate = _flash_generate
+        mlx_lm.generate = _flash_generate  # type: ignore
 
 
 def remove_flash_patch() -> None:
@@ -104,10 +104,10 @@ def remove_flash_patch() -> None:
     import mlx_lm
     
     # Restore original functions
-    mlx_lm.load = _ORIGINAL_LOAD
-    mlx_lm.stream_generate = _ORIGINAL_STREAM_GENERATE
+    mlx_lm.load = _ORIGINAL_LOAD  # type: ignore
+    mlx_lm.stream_generate = _ORIGINAL_STREAM_GENERATE  # type: ignore
     if _ORIGINAL_GENERATE:
-        mlx_lm.generate = _ORIGINAL_GENERATE
+        mlx_lm.generate = _ORIGINAL_GENERATE  # type: ignore
         
     if _ORIGINAL_SET_CACHE_LIMIT:
         mx.metal.set_cache_limit = _ORIGINAL_SET_CACHE_LIMIT

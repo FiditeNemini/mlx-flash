@@ -1,8 +1,7 @@
 
-import pytest
-import mlx.core as mx
-from mlx_flash.generation import FlashGenerationLoop
 from mlx_flash import FlashConfig
+from mlx_flash.generation import FlashGenerationLoop
+
 
 def test_rotating_cache_constructor_safety(tmp_model_dir):
     """Verify that RotatingKVCache is constructed without error."""

@@ -1,8 +1,9 @@
 
 import mlx.core as mx
-import numpy as np
 import pytest
+
 from mlx_flash.generation import FlashGenerationLoop
+
 
 @pytest.mark.real_model
 def test_first_token_sampling_temperature(tmp_model_dir):
@@ -38,6 +39,6 @@ def test_first_token_sampling_temperature(tmp_model_dir):
     assert token0 != token_high or token_high is not None # At least one works
     
     # Better: verify that multiple runs with high temp and NO seed reset differ.
-    gen1 = list(loop.stream_generate(prompt, temp=1.0, max_tokens=1))
-    gen2 = list(loop.stream_generate(prompt, temp=1.0, max_tokens=1))
+    list(loop.stream_generate(prompt, temp=1.0, max_tokens=1))
+    list(loop.stream_generate(prompt, temp=1.0, max_tokens=1))
     # In a small vocab (256), they might collide, but likely differ.

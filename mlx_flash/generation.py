@@ -29,7 +29,7 @@ class FlashLLM(nn.Module):
         self._n_layers = len(self._layers)
         self._pre_layer_fn = self._build_pre_layer_fn(model)
         self._post_layer_fn = self._build_post_layer_fn(model)
-        self.disk_cache = None  # optionally set by manager
+        self.disk_cache: Any = None  # optionally set by manager
     
     def _find_layers(self, model: nn.Module) -> list:
         """Find transformer layers via common attribute names."""
@@ -185,7 +185,7 @@ class FlashLLM(nn.Module):
 def _prefetch_layer_params(layer: nn.Module) -> None:
     """Issue madvise(WILLNEED) on the mmap pages of a layer's parameters."""
     from .page_cache import prefetch_array
-    for _, arr in tree_flatten(layer.parameters()):
+    for _, arr in tree_flatten(layer.parameters()):  # type: ignore
         if isinstance(arr, mx.array):
             # Note: Accessing the pointer for madvise currently triggers 
             # implicit evaluation in MLX's buffer protocol.
@@ -210,7 +210,7 @@ class DiskKVCache:
         """Load KV entries back from disk (lazy, mmap-backed)."""
         path = self._dir / f"layer_{layer_idx}_tokens_{token_range[0]}_{token_range[1]}.safetensors"
         data = mx.load(str(path))
-        return data["k"], data["v"]
+        return data["k"], data["v"]  # type: ignore
 
 class FlashGenerationLoop:
     """
@@ -223,7 +223,7 @@ class FlashGenerationLoop:
         self.config = config
         
         if isinstance(model_or_path, (str, Path)):
-            self.model, self.tokenizer = mlx_lm.load(str(model_or_path), lazy=True)
+            self.model, self.tokenizer = mlx_lm.load(str(model_or_path), lazy=True)[:2]  # type: ignore
             self.flash_model = FlashLLM(self.model, config)
         elif isinstance(model_or_path, FlashLLM):
             self.flash_model = model_or_path
@@ -258,7 +258,7 @@ class FlashGenerationLoop:
             try:
                 # Try new signature
                 self._cache = [
-                    RotatingKVCache(max_size=config.max_kv_size, keep=config.kv_keep, n_heads=n_heads, head_dim=head_dim)
+                    RotatingKVCache(max_size=config.max_kv_size, keep=config.kv_keep, n_heads=n_heads, head_dim=head_dim)  # type: ignore
                     for _ in range(n_layers)
                 ]
             except TypeError:
@@ -329,5 +329,5 @@ class FlashGenerationLoop:
         # Also clear local references
         self._cache = None
         self.flash_model = None
-        self.model = None
-        self.tokenizer = None
+        self.model: FlashLLM | None = None
+        self.tokenizer: Any = None

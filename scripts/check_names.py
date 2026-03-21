@@ -1,5 +1,7 @@
-from mlx_flash import FlashConfig, FlashModelLoader
 from pathlib import Path
+
+from mlx_flash import FlashConfig, FlashModelLoader
+
 
 def check_names():
     model_path = "/Users/granite/.lmstudio/models/lmstudio-community/NVIDIA-Nemotron-3-Nano-30B-A3B-MLX-4bit"

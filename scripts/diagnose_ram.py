@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import argparse
-import gc
-import os
-import psutil
-import mlx.core as mx
 from pathlib import Path
+
+import mlx.core as mx
 from mlx_lm.utils import load_config
-from mlx_flash.manager import FlashManager, FlashConfig
+
 from mlx_flash.diagnostics import RAMProfiler
+from mlx_flash.manager import FlashConfig, FlashManager
+
 
 def estimate_layer_size(model_path: str) -> float:
     path = Path(model_path)
@@ -21,11 +21,14 @@ def estimate_layer_size(model_path: str) -> float:
     if not n_layers:
         # Try to infer from architecture
         model_type = config.get("model_type", "").lower()
-        if "llama" in model_type: n_layers = 32
-        elif "mistral" in model_type: n_layers = 32
-        elif "gemma" in model_type: n_layers = 28
-        elif "phi3" in model_type: n_layers = 32
-        else: n_layers = 32 # Fallback
+        if "llama" in model_type or "mistral" in model_type:
+            n_layers = 32
+        elif "gemma" in model_type:
+            n_layers = 28
+        elif "phi3" in model_type:
+            n_layers = 32
+        else:
+            n_layers = 32 # Fallback
         
     return (total_bytes / n_layers) / 1e9
 

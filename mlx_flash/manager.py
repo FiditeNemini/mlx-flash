@@ -12,10 +12,10 @@ class FlashManager:
     """
     Orchestrates the Flash Weight Streaming environment.
     """
-    def __init__(self, config: FlashConfig = None):
+    def __init__(self, config: FlashConfig | None = None):
         self.config = config or FlashConfig()
-        self.model = None
-        self.tokenizer = None
+        self.model: Any = None
+        self.tokenizer: Any = None
 
     def _apply_wired_limit(self):
         """Set Metal wired memory limit based on RAM budget."""
@@ -50,14 +50,14 @@ class FlashManager:
         except (ImportError, AttributeError):
             loader = mlx_lm.load
             
-        model, self.tokenizer = loader(str(path), lazy=True)
+        model, self.tokenizer = loader(str(path), lazy=True)[:2]  # type: ignore
         
         # 3. Wrap in Flash execution engine
         self.model = FlashLLM(model, self.config)
         
         if self.config.debug:
             import mlx.utils
-            n_params = sum(v.size for _, v in mlx.utils.tree_flatten(model.parameters()))
+            n_params = sum(v.size for _, v in mlx.utils.tree_flatten(model.parameters()))  # type: ignore
             print(f"[flash] Loaded {path.name}: {n_params/1e9:.1f}B params, lazy (0 Metal RAM)")
             
         return self.model, self.tokenizer
