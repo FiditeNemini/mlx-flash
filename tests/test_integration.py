@@ -7,7 +7,6 @@ Run with:
         --flash
 """
 
-import pytest
 
 # Remove global skip so tests with synthetic models can run
 # pytestmark = pytest.mark.skipif(True, reason="requires --model flag")
@@ -41,10 +40,13 @@ def test_modelfile_no_flash():
 
 def test_flash_peak_ram_below_2gb(tmp_model_dir):
     """Flash mode on a tiny synthetic model should use < 200 MB peak RSS."""
-    import psutil, os
-    from mlx_engine_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
-    from mlx_engine_flash.config import FlashConfig
+    import os
+
     import mlx_lm
+    import psutil
+
+    from mlx_engine_flash.config import FlashConfig
+    from mlx_engine_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
 
     proc = psutil.Process(os.getpid())
     # Ensure any previous patch is removed

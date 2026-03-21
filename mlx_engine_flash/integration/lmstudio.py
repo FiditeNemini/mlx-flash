@@ -55,14 +55,19 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
 
     # 2. Patch stream_generate
     def _flash_stream_generate(model, tokenizer, prompt, **kwargs):
+        import collections
+
         from ..generation import FlashGenerationLoop, FlashLLM
+        GenerationResult = collections.namedtuple("GenerationResult", ["text"])
+        
         global _LAST_LOOP
         
         if isinstance(model, FlashLLM):
             # Use the production generation loop for proper decoding and sampling
             loop = FlashGenerationLoop(model, tokenizer, config)
             _LAST_LOOP = loop
-            yield from loop.stream_generate(prompt, **kwargs)
+            for chunk in loop.stream_generate(prompt, **kwargs):
+                yield GenerationResult(text=chunk)
         else:
             yield from _ORIGINAL_STREAM_GENERATE(model, tokenizer, prompt, **kwargs)
 
@@ -76,7 +81,7 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
                 # stream_generate now returns text
                 full_text = ""
                 for chunk in _flash_stream_generate(model, tokenizer, prompt, **kwargs):
-                    full_text += chunk
+                    full_text += chunk.text
                 return full_text
             else:
                 return _ORIGINAL_GENERATE(model, tokenizer, prompt, **kwargs)

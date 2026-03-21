@@ -2,12 +2,13 @@ import sys
 import time
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx_lm
 from mlx.utils import tree_flatten
-from mlx_lm.models.cache import RotatingKVCache, make_prompt_cache
+from mlx_lm.models.cache import RotatingKVCache
 
 from .config import FlashConfig
 
@@ -205,11 +206,25 @@ class FlashGenerationLoop:
     """
     High-level generator that uses FlashLLM and mlx_lm.generate_step.
     """
-    def __init__(self, model_path: str, config: FlashConfig):
+    def __init__(self, model_or_path: str | nn.Module, tokenizer: Any = None, config: FlashConfig = None):
+        if config is None:
+             from .config import FlashConfig
+             config = FlashConfig()
         self.config = config
-        self.model, self.tokenizer = mlx_lm.load(model_path, lazy=True)
-        self.flash_model = FlashLLM(self.model, config)
         
+        if isinstance(model_or_path, str):
+            self.model, self.tokenizer = mlx_lm.load(model_or_path, lazy=True)
+            self.flash_model = FlashLLM(self.model, config)
+        elif isinstance(model_or_path, FlashLLM):
+            self.flash_model = model_or_path
+            self.model = self.flash_model._model
+            self.tokenizer = tokenizer
+        else:
+            # Assume it is a base nn.Module from mlx_lm.load
+            self.model = model_or_path
+            self.tokenizer = tokenizer
+            self.flash_model = FlashLLM(self.model, config)
+            
         n_layers = self.flash_model._n_layers
         
         # Initialize Cache
@@ -219,6 +234,8 @@ class FlashGenerationLoop:
                 for _ in range(n_layers)
             ]
         else:
+            # We must import this if it's not already
+            from mlx_lm.utils import make_prompt_cache
             self._cache = make_prompt_cache(self.model)
             
         if config.kv_cache_dir:
@@ -273,4 +290,11 @@ class FlashGenerationLoop:
             yield self.tokenizer.decode([token_id])
 
     def shutdown(self):
-        pass
+        """Clean up resources by shutting down the model manager."""
+        if hasattr(self.flash_model, "manager") and self.flash_model.manager:
+            self.flash_model.manager.shutdown()
+        # Also clear local references
+        self._cache = None
+        self.flash_model = None
+        self.model = None
+        self.tokenizer = None

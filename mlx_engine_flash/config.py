@@ -35,9 +35,10 @@ class FlashConfig:
         "dontneed" — MADV_DONTNEED: tell OS pages are unneeded (advisory).
         "free"     — MADV_FREE: allow OS to reuse pages immediately (macOS ≥14).
         "none"     — do nothing after layer; trust OS LRU entirely.
-    metal_kernels:
-        Use custom Flash Metal kernels if compiled.  Falls back to MLX built-ins
-        if the .metallib is not present.
+    expert_cache_size:
+        Number of experts to keep in LRU cache (for MoE models).
+    strict_guardrails:
+        If True, enforce memory budget strictly by potentially raising errors.
     debug:
         Print per-layer timing and page-cache stats to stderr.
     """

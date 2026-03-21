@@ -1,5 +1,5 @@
-import pytest
 from mlx_engine_flash.diagnostics import RAMProfiler
+
 
 def test_ram_profiler_snapshot_valid():
     profiler = RAMProfiler()

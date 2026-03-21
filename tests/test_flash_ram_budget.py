@@ -8,11 +8,12 @@ RSS stays below a configurable budget.
 
 import gc
 import os
+
+import mlx.core as mx
 import psutil
 import pytest
-import mlx.core as mx
 
-from mlx_engine_flash import FlashConfig, FlashGenerationLoop, FlashLLM
+from mlx_engine_flash import FlashConfig, FlashGenerationLoop
 
 
 def get_rss_mb() -> float:
@@ -100,7 +101,7 @@ class TestFlashRAMBudget:
         
         rss_before = get_rss_mb()
         loop = FlashGenerationLoop(model_path, config)
-        tokens = list(loop.stream_generate("Explain quantum computing.", max_tokens=20))
+        _ = list(loop.stream_generate("Explain quantum computing.", max_tokens=20))
         rss_peak = get_rss_mb()
         
         print(f"\nPeak RSS increase: {rss_peak - rss_before:.1f} MB")

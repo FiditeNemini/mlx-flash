@@ -97,8 +97,6 @@ def tmp_model_dir(tmp_path_factory):
     hidden_dim=256, intermediate=512, n_experts=0 (dense).
     """
     mdir = tmp_path_factory.mktemp("test_model")
-    hidden = 256
-    inter = 512
     def rand_f16(shape: list[int]) -> bytes:
         rng = np.random.default_rng(42)
         return rng.standard_normal(shape).astype(np.float16).tobytes()
@@ -175,7 +173,8 @@ def reset_metal_state():
     yield
     try:
         mx.metal.clear_cache()
-        import gc; gc.collect()
+        import gc
+        gc.collect()
     except (ImportError, AttributeError):
         pass
 

@@ -8,14 +8,11 @@ Run time: ~5s on M-series Mac (synthetic model, 2 layers, tiny hidden dim).
 """
 
 import gc
-import os
-import sys
+
 import pytest
-import numpy as np
 
 try:
     import mlx.core as mx
-    import mlx.nn as nn
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -75,14 +72,14 @@ class TestFlashInvariant:
         mx.metal.clear_cache() is not freeing the weight allocations, OR
         the FlashLLM wrapper is building a unified graph instead of sequential ones.
         """
-        from mlx_engine_flash.generation import FlashLLM
-        
         # Compute single layer size
-        try:
-            import mlx_lm
-            model, tokenizer = mlx_lm.load(str(tmp_model_dir), lazy=True)
-        except ImportError:
+        import importlib.util
+
+        from mlx_engine_flash.generation import FlashLLM
+        if importlib.util.find_spec("mlx_lm") is None:
             pytest.skip("mlx_lm not installed")
+        import mlx_lm
+        model, tokenizer = mlx_lm.load(str(tmp_model_dir), lazy=True)
         
         # Estimate single layer param bytes
         from mlx.utils import tree_flatten
@@ -129,7 +126,7 @@ class TestFlashInvariant:
             tracker.record()
         finally:
             # Revert patch
-            if hasattr(flash_model, "__call__"):
+            if callable(flash_model):
                  del flash_model.__call__
         
         assert tracker.peak <= budget_mb, (
@@ -147,11 +144,10 @@ class TestFlashInvariant:
         If this fails: wired_limit is not being restored, OR model references
         are being held somewhere preventing GC.
         """
+        import importlib.util
+
         from mlx_engine_flash.manager import FlashManager
-        
-        try:
-            import mlx_lm
-        except ImportError:
+        if importlib.util.find_spec("mlx_lm") is None:
             pytest.skip("mlx_lm not installed")
         
         mx.metal.clear_cache()
