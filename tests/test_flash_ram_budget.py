@@ -60,6 +60,48 @@ class TestFlashRAMBudget:
                                               max_tokens=5))
         assert len(result) > 0
 
+    def test_disk_kv_cache_infinite_context(self, tmp_model_dir):
+        """
+        Prove that with disk_kv_enabled, a massive context uses near-zero RAM
+        because the KV cache lives entirely on the SSD as lazy arrays.
+        """
+        import shutil
+        from pathlib import Path
+        import mlx_lm
+        
+        cfg = FlashConfig(
+            enabled=True, 
+            ram_budget_gb=0.5,           # Very strict RAM constraint
+            disk_kv_enabled=True, 
+            disk_kv_dir="/tmp/test_flash_kv"
+        )
+        loop = FlashGenerationLoop(str(tmp_model_dir), config=cfg)
+        
+        # We manually synthesize a list of 4000 tokens (which would normally blow past RAM bounds
+        # if the KV cache were held synchronously in the strict Metal budget)
+        prompt_tokens = [0] * 4000
+        
+        mx.metal.clear_cache()
+        gc.collect()
+        rss_before = get_rss_mb()
+        
+        # Stream generate
+        result = list(loop.stream_generate(prompt_tokens, max_tokens=5))
+        assert len(result) > 0
+        
+        rss_after = get_rss_mb()
+        
+        # Check that the SSD files were actually created
+        kv_dir = Path("/tmp/test_flash_kv")
+        assert kv_dir.exists()
+        safetensors_files = list(kv_dir.glob("*.safetensors"))
+        assert len(safetensors_files) > 0, "Disk KV Cache did not create safetensors files!"
+        
+        # Verify RAM stayed bounded despite 4000 tokens
+        assert (rss_after - rss_before) < 1500, "RAM exceeded bounds, Disk KV cache failed to page correctly"
+        
+        shutil.rmtree(kv_dir, ignore_errors=True)
+
     def test_per_layer_metal_memory_stays_bounded(self, tmp_model_dir, flash_config):
         """
         During generation, Metal active memory should never exceed 

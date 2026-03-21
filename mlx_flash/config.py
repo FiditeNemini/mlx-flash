@@ -65,6 +65,10 @@ class FlashConfig:
 
     moe_top_k_override: int | None = None   # Planned v0.3+ (MoE weight streaming)
     
+    # Disk KV Cache Offloading (v0.3.1)
+    disk_kv_enabled: bool = False
+    disk_kv_dir: str = "/tmp/mlx_flash_kv"
+    
     # Telemetry
     monitor_queue: queue.Queue | None = None # If set, emit telemetry events
 

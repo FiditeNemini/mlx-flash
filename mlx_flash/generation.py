@@ -262,6 +262,27 @@ class FlashGenerationLoop:
         }
         kwargs["sampler"] = make_sampler(**sampler_args)
 
+        # Inject DiskKVCache if enabled
+        print(f"[DEBUG] Flash config disk_kv_enabled: {getattr(self.config, 'disk_kv_enabled', None)}")
+        if getattr(self.config, "disk_kv_enabled", False):
+            if "prompt_cache" not in kwargs:
+                print(f"[DEBUG] Injecting DiskKVCache into kwargs...")
+                from mlx_flash.disk_kv_cache import DiskKVCache
+                import shutil
+                from pathlib import Path
+                
+                kv_dir = Path(getattr(self.config, "disk_kv_dir", "/tmp/mlx_flash_kv"))
+                # Wipe old cache to ensure clean context
+                if kv_dir.exists():
+                    shutil.rmtree(kv_dir, ignore_errors=True)
+                kv_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Build the array of DiskKVCaches
+                prompt_cache = [DiskKVCache(layer_idx=i, cache_dir=str(kv_dir)) 
+                              for i in range(self.flash_model._n_layers)]
+                kwargs["prompt_cache"] = prompt_cache
+                print(f"[DEBUG] Injected {len(prompt_cache)} DiskKVCache layers at {kv_dir}")
+
         for result in mlx_lm.stream_generate(
             self.flash_model, self.tokenizer, prompt,
             max_tokens=max_tokens, **kwargs,
