@@ -71,9 +71,7 @@ class FlashManager:
             with contextlib.suppress(Exception):
                 self._telemetry_bridge.stop()
             self._telemetry_bridge = None
-
         # 2. Restore Metal wired limit to 0 (default)
-        import contextlib
         with contextlib.suppress(AttributeError, Exception):
             mx.metal.set_wired_limit(0)
 

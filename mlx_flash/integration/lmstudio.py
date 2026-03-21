@@ -66,7 +66,9 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
         
         if isinstance(model, FlashLLM):
             # Use the production generation loop for proper decoding and sampling
-            loop = FlashGenerationLoop(model, tokenizer, config)
+            if not hasattr(model, "_flash_loop"):
+                model._flash_loop = FlashGenerationLoop(model, tokenizer, config)
+            loop = model._flash_loop
             _LAST_LOOP = loop
             for chunk in loop.stream_generate(prompt, **kwargs):
                 yield GenerationResult(text=chunk)

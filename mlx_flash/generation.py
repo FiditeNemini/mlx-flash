@@ -243,10 +243,17 @@ class FlashGenerationLoop:
             # We try to detect if we need them, or just use the model's make_cache if possible.
             from mlx_lm.models.cache import RotatingKVCache
             
-            # Heuristic: try to get dimensions from the model
+            # Heuristic: try to get dimensions from the model, args, or config
             sub = getattr(self.model, "model", self.model)
-            n_heads = getattr(sub, "n_kv_heads", getattr(sub, "num_key_value_heads", 0))
-            head_dim = getattr(sub, "head_dim", 0)
+            args = getattr(self.model, "args", getattr(self.model, "config", None))
+            
+            n_heads = (getattr(sub, "n_kv_heads", 0) or 
+                      getattr(sub, "num_key_value_heads", 0) or 
+                      (getattr(args, "n_kv_heads", 0) if args else 0) or
+                      (getattr(args, "num_key_value_heads", 0) if args else 0))
+            
+            head_dim = (getattr(sub, "head_dim", 0) or 
+                       (getattr(args, "head_dim", 0) if args else 0))
             
             try:
                 # Try new signature
