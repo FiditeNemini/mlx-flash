@@ -17,7 +17,7 @@ class SafetensorsMmapCache:
         self.model_path = Path(model_path)
         self.file_mmaps: dict[str, mmap.mmap] = {}
         self.file_handles: dict[str, Any] = {}
-        self.tensor_locations: dict[str, tuple[mmap.mmap, int, int]] = {}
+        self.tensor_locations: dict[str, tuple[mmap.mmap, int, int, str]] = {}
         
         self._load_all()
         self.prefetch_worker = BackgroundPrefetcher(self.file_handles)
@@ -66,7 +66,7 @@ class SafetensorsMmapCache:
             return (info[0], info[1], info[2])
         return None
     
-    def get_layer_ranges(self, layer_idx: int) -> dict[mmap.mmap, tuple[int, int]]:
+    def get_layer_ranges(self, layer_idx: int) -> dict[mmap.mmap, tuple[int, int, str]]:
         """
         Groups all tensors belonging to `layer_idx` into contiguous or combined byte ranges 
         per physical mmap file to minimize madvise calls.
@@ -74,7 +74,7 @@ class SafetensorsMmapCache:
         layer_prefix = f"model.layers.{layer_idx}."
         
         # Collect all intervals for this layer, grouped by mmap
-        intervals_by_mmap = {}
+        intervals_by_mmap: dict[mmap.mmap, list[tuple[int, int, str]]] = {}
         
         for t_name, info in self.tensor_locations.items():
             if t_name.startswith(layer_prefix):
@@ -85,7 +85,7 @@ class SafetensorsMmapCache:
                 intervals_by_mmap[mm].append((start, end, filename))
                 
         # Merge overlapping/adjacent intervals
-        merged = {}
+        merged: dict[mmap.mmap, tuple[int, int, str]] = {}
         for mm, intervals in intervals_by_mmap.items():
             intervals.sort(key=lambda x: x[0])
             min_start = intervals[0][0]

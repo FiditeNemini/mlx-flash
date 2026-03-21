@@ -2,6 +2,7 @@ import contextlib
 import json
 import struct
 from pathlib import Path
+from typing import Any, IO, Optional, cast
 
 import mlx.core as mx
 import numpy as np
@@ -42,20 +43,20 @@ class DiskKVCache(KVCache):
         self.offset = 0
         self.header_pad_size = 8192  # 8 KB padded header is plenty
 
-        self.fd_k = None
-        self.fd_v = None
+        self.fd_k: Optional[IO[bytes]] = None
+        self.fd_v: Optional[IO[bytes]] = None
 
-        self.k_dtype_str = None
-        self.k_shape = None
-        self.v_shape = None
+        self.k_dtype_str: Optional[str] = None
+        self.k_shape: Optional[tuple[int, ...]] = None
+        self.v_shape: Optional[tuple[int, ...]] = None
         self.bytes_per_elem = 2
         self._max_tokens = max_tokens
         self._closed = False
         self._exit_stack = contextlib.ExitStack()
 
         # Satisfy KVCache contract: keys/values are None until first update
-        self.keys = None
-        self.values = None
+        self.keys: Optional[mx.array] = None
+        self.values: Optional[mx.array] = None
 
     # ── Resource Management ─────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ class DiskKVCache(KVCache):
         self._write_header(self.fd_k, "keys", 0, k_shape)
         self._write_header(self.fd_v, "values", 0, v_shape)
 
-    def _write_header(self, fd, name, seq_len: int, base_shape: tuple):
+    def _write_header(self, fd: IO[bytes], name: str, seq_len: int, base_shape: tuple):
         """Write the padded safetensors header to the start of the file."""
         # disk shape is [SeqLen, Batch, Heads, HeadDim]
         disk_shape = [seq_len, base_shape[0], base_shape[1], base_shape[3]]
@@ -141,8 +142,11 @@ class DiskKVCache(KVCache):
             return
 
         # Load current data, keep only the tail
-        old_k = mx.load(str(self.k_path))["keys"]  # [Seq, B, H, D]
-        old_v = mx.load(str(self.v_path))["values"]
+        loaded_k = mx.load(str(self.k_path))
+        loaded_v = mx.load(str(self.v_path))
+        assert isinstance(loaded_k, dict) and isinstance(loaded_v, dict)
+        old_k = cast(mx.array, loaded_k["keys"])  # [Seq, B, H, D]
+        old_v = cast(mx.array, loaded_v["values"])
         tail_k = old_k[-keep:]
         tail_v = old_v[-keep:]
         mx.eval(tail_k, tail_v)
@@ -152,10 +156,11 @@ class DiskKVCache(KVCache):
         self._rewrite_empty()
         k_buf = np.asarray(tail_k)
         v_buf = np.asarray(tail_v)
+        assert self.fd_k is not None and self.fd_v is not None
         self.fd_k.seek(0, 2)
-        self.fd_k.write(memoryview(k_buf))
+        self.fd_k.write(k_buf.tobytes())
         self.fd_v.seek(0, 2)
-        self.fd_v.write(memoryview(v_buf))
+        self.fd_v.write(v_buf.tobytes())
         self.offset = keep
         self._write_header(self.fd_k, "keys", self.offset, self.k_shape)
         self._write_header(self.fd_v, "values", self.offset, self.v_shape)
@@ -164,6 +169,8 @@ class DiskKVCache(KVCache):
 
     def _rewrite_empty(self):
         """Truncate files back to header-only state."""
+        assert self.fd_k is not None and self.fd_v is not None
+        assert self.k_shape is not None and self.v_shape is not None
         for fd, name, shape in [
             (self.fd_k, "keys", self.k_shape),
             (self.fd_v, "values", self.v_shape),
@@ -198,6 +205,7 @@ class DiskKVCache(KVCache):
         v_bytes = np.asarray(v_t_f32).tobytes()
 
         # 3. Append physical bytes (data first — crash-safe ordering)
+        assert self.fd_k is not None and self.fd_v is not None
         self.fd_k.seek(0, 2)
         self.fd_k.write(k_bytes)
 
@@ -207,15 +215,19 @@ class DiskKVCache(KVCache):
         self.offset += new_seq
 
         # 4. Rewrite the JSON headers, then flush once
+        assert self.k_shape is not None and self.v_shape is not None
         self._write_header(self.fd_k, "keys", self.offset, self.k_shape)
         self._write_header(self.fd_v, "values", self.offset, self.v_shape)
         self.fd_k.flush()
         self.fd_v.flush()
-
+        
         # 5. Native MLX Lazy Load the entire growing cache
         # shape is [TotalSeq, Batch, Heads, HeadDim]
-        lazy_k_t = mx.load(str(self.k_path))["keys"]
-        lazy_v_t = mx.load(str(self.v_path))["values"]
+        loaded_k = mx.load(str(self.k_path))
+        loaded_v = mx.load(str(self.v_path))
+        assert isinstance(loaded_k, dict) and isinstance(loaded_v, dict)
+        lazy_k_t = cast(mx.array, loaded_k["keys"])
+        lazy_v_t = cast(mx.array, loaded_v["values"])
 
         # 6. Transpose back into expected MLX format [Batch, Heads, TotalSeq, HeadDim]
         # This is a purely metadata zero-copy operation in MLX
@@ -257,8 +269,11 @@ class DiskKVCache(KVCache):
             # Reload trimmed arrays
             if self.offset > 0:
                 dtype = self.keys.dtype if self.keys is not None else mx.float16
-                lazy_k_t = mx.load(str(self.k_path))["keys"]
-                lazy_v_t = mx.load(str(self.v_path))["values"]
+                loaded_k = mx.load(str(self.k_path))
+                loaded_v = mx.load(str(self.v_path))
+                assert isinstance(loaded_k, dict) and isinstance(loaded_v, dict)
+                lazy_k_t = cast(mx.array, loaded_k["keys"])
+                lazy_v_t = cast(mx.array, loaded_v["values"])
                 self.keys = lazy_k_t.transpose(1, 2, 0, 3).astype(dtype)
                 self.values = lazy_v_t.transpose(1, 2, 0, 3).astype(dtype)
             else:
@@ -275,6 +290,7 @@ class DiskKVCache(KVCache):
             return 0
         # Per token: B * H * D * bytes_per_elem * 2 (keys + values)
         # Use logical bytes per element from keys.dtype
+        assert self.keys is not None and self.k_shape is not None
         logical_bytes = 4 if self.keys.dtype == mx.float32 else 2
         per_token = self.k_shape[0] * self.k_shape[1] * self.k_shape[3] * logical_bytes
         return self.offset * per_token * 2

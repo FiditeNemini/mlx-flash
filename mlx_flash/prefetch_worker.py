@@ -23,7 +23,7 @@ class BackgroundPrefetcher:
     """
     def __init__(self, file_handles: dict[str, Any]):
         self.file_handles = file_handles
-        self.queue = queue.Queue(maxsize=16) # Don't get too far ahead
+        self.queue: queue.Queue[tuple[str, int, int]] = queue.Queue(maxsize=16) # Don't get too far ahead
         self.running = True
         self.thread = threading.Thread(target=self._worker, daemon=True)
         self.thread.start()

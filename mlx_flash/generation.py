@@ -4,7 +4,7 @@ import sys
 import time
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -87,7 +87,7 @@ class FlashLLM(nn.Module):
         elif hasattr(self._model, "backbone") and getattr(self._model, "backbone", None) is self._inner:
             parent_prefix = "backbone."
         
-        index = [[] for _ in range(self._n_layers)]
+        index: list[list[tuple[str, list[str]]]] = [[] for _ in range(self._n_layers)]
         
         sf_files = sorted(self._model_path.glob("*.safetensors"))
         for sf in sf_files:
@@ -256,10 +256,10 @@ class FlashLLM(nn.Module):
         # TOKEN-LOCAL WEIGHT CACHE: Load fresh lazy arrays for the entire model
         # ONCE at the start of the token pass. This eliminates the 52x overhead
         # of repeatedly parsing safetensors headers in the layer loop.
-        token_weights = {}
+        token_weights: dict[str, Any] = {}
         if self._weight_files:
             for sf_path in self._weight_files:
-                token_weights.update(mx.load(sf_path))
+                token_weights.update(cast(dict[str, Any], mx.load(sf_path)))
 
         # Pre-layer: embedding
         h = self._pre_layer_fn(x)
