@@ -23,24 +23,30 @@ class FlashConfig:
     ram_budget_gb:
         Soft cap on resident weight RAM (in GB).  The OS page cache naturally
         enforces this via LRU eviction. Default 2.0 GB suits 8/16-GB Macs well.
-    moe_top_k_override:
-        If set, overrides the model's default top-K for MoE routing.  Useful
-        to reduce RAM further (e.g. force K=1 for very low RAM at quality cost).
-    min_quant_bits:
-        Warn (or raise if strict=True) when a model uses fewer than this many
-        bits.  Default 4 = no warning for Q4; set to 8 to flag 2-bit models.
-    strict_quant:
-        If True, raise ValueError instead of just warning for sub-min_quant_bits.
     eviction_strategy:
         "dontneed" — MADV_DONTNEED: tell OS pages are unneeded (advisory).
         "free"     — MADV_FREE: allow OS to reuse pages immediately (macOS ≥14).
         "none"     — do nothing after layer; trust OS LRU entirely.
+    metal_kernels:
+        Whether to use Metal compute kernels (when available).
     expert_cache_size:
         Number of experts to keep in LRU cache (for MoE models).
     strict_guardrails:
-        If True, enforce memory budget strictly by potentially raising errors.
+        If True, FlashManager.load raises on RAM-budget violations.
+        Set False only for tiny models or testing.
     debug:
         Print per-layer timing and page-cache stats to stderr.
+    max_kv_size:
+        Maximum KV-cache size in tokens.  None = unlimited.
+    kv_keep:
+        Tokens to keep when the rotating KV cache evicts.
+    prefill_chunk_size:
+        Number of tokens per prefill chunk.  0 = no chunking.
+    moe_top_k_override:
+        If set, overrides the model's default top-K for MoE routing.  Useful
+        to reduce RAM further (e.g. force K=1 for very low RAM at quality cost).
+    monitor_queue:
+        If set, FlashLLM emits per-layer telemetry dicts to this queue.
     """
 
     enabled: bool = False

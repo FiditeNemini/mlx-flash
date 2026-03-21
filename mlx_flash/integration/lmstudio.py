@@ -40,6 +40,9 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
     # stream_generate / generate work unchanged because FlashLLM is a
     # transparent nn.Module proxy.
     def _flash_load(path, *args, **kwargs):
+        # NOTE: When Flash is active, FlashManager.load always uses lazy=True
+        # regardless of the caller's kwargs — this is intentional, since Flash
+        # mode requires lazy loading for mmap-based weight streaming.
         if not _should_use_flash(str(path), config):
             return _ORIGINAL_LOAD(path, *args, **kwargs)
         

@@ -8,7 +8,7 @@ Typical usage inside mlx-engine (or any mlx-lm wrapper):
     from mlx_flash import FlashConfig, FlashManager
     from mlx_flash.integration.lmstudio import apply_flash_patch
 
-    config = FlashConfig(enabled=True, ram_budget_gb=10.0, n_io_threads=4)
+    config = FlashConfig(enabled=True, ram_budget_gb=10.0)
     apply_flash_patch(config)          # patches mlx_lm.load globally
     # ... rest of mlx-engine startup unchanged
 

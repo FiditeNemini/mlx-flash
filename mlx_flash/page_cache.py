@@ -148,36 +148,6 @@ def set_sequential(mm: mmap.mmap, offset: int, length: int) -> bool:
     return madvise_range(mm, offset, length, MADV_SEQUENTIAL)
 
 
-def _madvise_array(arr: Any, advice: int) -> bool:
-    """Internal helper to call madvise on the memory backing an MLX array."""
-    libc = get_libc()
-    if libc is None:
-        return False
-    
-    try:
-        # NOTE: np.array(arr, copy=False) on lazy MLX arrays forces a 
-        # synchronous evaluation, defeating the purpose of an async prefetch hint.
-        # We handle this by only advisig if the array is already materialised,
-        # or skipping if it would cause a stall.
-        # For now, we skip as it provides minimal benefit for lazy arrays.
-        return False
-    except Exception:
-        return False
-
-
-def prefetch_array(arr: Any) -> bool:
-    """Issue MADV_WILLNEED on the mmap pages backing an MLX array."""
-    return _madvise_array(arr, MADV_WILLNEED)
-
-
-def release_array(arr: Any, strategy: str = "free") -> bool:
-    """Issue MADV_FREE or MADV_DONTNEED on the memory backing an MLX array."""
-    if strategy == "none":
-        return True
-    advice = MADV_FREE if strategy == "free" else MADV_DONTNEED
-    return _madvise_array(arr, advice)
-
-
 class PageCacheRegion:
     """
     Context manager that prefetches a mmap region on entry and

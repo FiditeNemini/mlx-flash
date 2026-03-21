@@ -71,9 +71,16 @@ class FlashManager:
             with contextlib.suppress(Exception):
                 self._telemetry_bridge.stop()
             self._telemetry_bridge = None
-        # 2. Restore Metal wired limit to 0 (default)
+        # 2. Restore Metal wired limit to 0 (default).
+        # If the monkey-patch is active, mx.metal.set_wired_limit may be a
+        # no-op lambda.  Use the saved original when available.
         with contextlib.suppress(AttributeError, Exception):
-            mx.metal.set_wired_limit(0)
+            try:
+                from .integration.lmstudio import _ORIGINAL_SET_WIRED_LIMIT
+                setter = _ORIGINAL_SET_WIRED_LIMIT or mx.metal.set_wired_limit
+            except ImportError:
+                setter = mx.metal.set_wired_limit
+            setter(0)
 
         # 3. Clear model and tokenizer references to allow GC
         self.model = None

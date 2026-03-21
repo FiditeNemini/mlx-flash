@@ -241,51 +241,28 @@ class FlashGenerationLoop:
             
 
 
-    def _chunked_prefill(self, prompt_tokens: list[int], **kwargs):
-        """Process a long prompt in chunks to avoid attention OOM."""
-        chunk_size = self.config.prefill_chunk_size
-        num_tokens = len(prompt_tokens)
-        
-        if chunk_size <= 0 or num_tokens <= chunk_size:
-            input_tokens = mx.array(prompt_tokens)[None]
-            return self.flash_model(input_tokens, cache=self._cache, **kwargs)
-
-        logits = None
-        for i in range(0, num_tokens, chunk_size):
-            chunk = prompt_tokens[i : i + chunk_size]
-            chunk_input = mx.array(chunk)[None]
-            logits = self.flash_model(chunk_input, cache=self._cache, **kwargs)
-            mx.eval(logits)
-            mx.clear_cache()
-        return logits
-
     def stream_generate(self, prompt: str, max_tokens: int = 100, **kwargs) -> Generator[str, None, None]:
-        tokens = self.tokenizer.encode(prompt)
-        
-        # Extract sampling parameters
+        """Generate tokens using the standard mlx_lm pipeline with FlashLLM.
+
+        Delegates to mlx_lm.stream_generate so behavior is identical to the
+        monkey-patch path.  FlashLLM is a transparent nn.Module proxy, so the
+        standard pipeline handles prefill, caching, and sampling correctly.
+        """
+        # Extract sampling params that generate_step doesn't accept directly.
+        # generate_step expects a `sampler` callable, not raw temp/top_p/top_k.
         from mlx_lm.sample_utils import make_sampler
         sampler_args = {
             "temp": kwargs.pop("temp", kwargs.pop("temperature", 0.0)),
             "top_p": kwargs.pop("top_p", 1.0),
             "top_k": kwargs.pop("top_k", 0),
         }
-        sampler = make_sampler(**sampler_args)
-        
-        # mlx_lm expects the model to be callable and return logits
-        logits = self._chunked_prefill(tokens, **kwargs)
-        
-        # Sample the first token from prefill logits
-        y = sampler(logits[:, -1, :])
-        yield self.tokenizer.decode([y.item()])
-        
-        from mlx_lm.generate import generate_step
-        
-        for count, (token_id, _) in enumerate(generate_step(y, self.flash_model, prompt_cache=self._cache, sampler=sampler, **kwargs)):
-            if count >= max_tokens - 1:
-                break
-            if token_id == self.tokenizer.eos_token_id:
-                break
-            yield self.tokenizer.decode([token_id])
+        kwargs["sampler"] = make_sampler(**sampler_args)
+
+        for result in mlx_lm.stream_generate(
+            self.flash_model, self.tokenizer, prompt,
+            max_tokens=max_tokens, **kwargs,
+        ):
+            yield result.text
 
     def shutdown(self):
         """Clean up resources by shutting down the model manager."""
