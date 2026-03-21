@@ -35,6 +35,8 @@ def test_native_stream_generate_with_patch(tmp_model_dir):
 
 def test_prefill_mask_correctness(tmp_model_dir):
     """Verify that FlashLLM handles prefill (T > 1) via create_attention_mask."""
+    from mlx_lm.models.cache import make_prompt_cache
+
     from mlx_flash.generation import FlashLLM
     model, tokenizer = mlx_lm.load(str(tmp_model_dir))
     flash_model = FlashLLM(model, FlashConfig(enabled=True))
@@ -43,9 +45,9 @@ def test_prefill_mask_correctness(tmp_model_dir):
     prompt = "This is a longer prompt to ensure create_attention_mask is called. " * 5
     tokens = mx.array(tokenizer.encode(prompt))[None]
     
-    # This calls FlashLLM.__call__
-    # If mask logic is wrong, this might crash or produce NaNs in some architectures,
-    # though with synthetic models it usually just runs.
-    logits = flash_model(tokens)
+    # Pass a cache so the mask construction path (mask is None and cache is not None)
+    # is actually exercised via create_attention_mask.
+    cache = make_prompt_cache(model)
+    logits = flash_model(tokens, cache=cache)
     assert logits.shape[1] == tokens.shape[1]
     assert not mx.isnan(logits).any()

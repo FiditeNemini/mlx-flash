@@ -55,8 +55,7 @@ class FlashConfig:
     max_kv_size: int | None = None           # None = unlimited; 4096 = safe for 16GB
     kv_keep: int = 250                          # tokens to keep during rotation
     prefill_chunk_size: int = 512              # tokens per prefill chunk; 0 = no chunking
-    kv_cache_dir: str | None = None         # If set, enable disk KV cache
-    max_in_memory_kv_tokens: int = 2048        # evict to disk above this
+
     moe_top_k_override: int | None = None   # For MoE weight streaming
     
     # Telemetry

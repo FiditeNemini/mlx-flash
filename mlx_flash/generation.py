@@ -1,3 +1,4 @@
+import inspect
 import sys
 import time
 from collections.abc import Generator
@@ -29,6 +30,7 @@ class FlashLLM(nn.Module):
         object.__setattr__(self, "_n_layers", len(self._layers))
         object.__setattr__(self, "_pre_layer_fn", self._build_pre_layer_fn(model))
         object.__setattr__(self, "_post_layer_fn", self._build_post_layer_fn(model))
+        object.__setattr__(self, "_layer_sigs", self._cache_layer_signatures())
         object.__setattr__(self, "disk_cache", None)
     
     def _find_layers(self, model: nn.Module) -> list:
@@ -76,8 +78,17 @@ class FlashLLM(nn.Module):
             return h
         return post
     
-    def _is_mamba_layer(self, layer) -> bool:
-        return hasattr(layer, "mixer") and hasattr(layer.mixer, "ssm")
+    def _cache_layer_signatures(self) -> list[tuple[bool, bool, bool]]:
+        """Pre-compute (is_mamba, has_mask, has_cache) per layer."""
+        sigs = []
+        for layer in self._layers:
+            is_mamba = hasattr(layer, "mixer") and hasattr(layer.mixer, "ssm")
+            if is_mamba:
+                sigs.append((True, False, False))
+            else:
+                params = inspect.signature(layer.__call__).parameters
+                sigs.append((False, "mask" in params, "cache" in params))
+        return sigs
     
     def __call__(
         self,
@@ -95,23 +106,20 @@ class FlashLLM(nn.Module):
             mask = create_attention_mask(h, cache)
             
         # Per-layer synchronous execution
-        import inspect
         for i, layer in enumerate(self._layers):
             cache_entry = cache[i] if cache is not None else None
+            is_mamba, has_mask, has_cache = self._layer_sigs[i]
             
             # Run this layer (builds a small graph for ONE layer)
-            if self._is_mamba_layer(layer):
+            if is_mamba:
                 # Mamba layers have different cache structure (state)
                 h, cache_entry = layer(h, cache_entry)
                 if cache_entry is not None:
                     mx.eval(h, *cache_entry)
             else:
-                # 2. Robust Layer Execution (inspect.signature)
-                sig = inspect.signature(layer.__call__)
-                params = sig.parameters
-                if 'mask' in params and 'cache' in params:
+                if has_mask and has_cache:
                     h = layer(h, mask=mask, cache=cache_entry)
-                elif 'cache' in params:
+                elif has_cache:
                     h = layer(h, cache=cache_entry)
                 else:
                     h = layer(h)

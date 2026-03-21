@@ -4,8 +4,6 @@ import pathlib
 from ..config import FlashConfig
 
 _ORIGINAL_LOAD = None
-_ORIGINAL_STREAM_GENERATE = None
-_ORIGINAL_GENERATE = None
 _ORIGINAL_SET_CACHE_LIMIT = None
 _ORIGINAL_SET_WIRED_LIMIT = None
 
@@ -13,7 +11,7 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
     """
     Monkey-patch mlx_lm to be Flash-compatible.
     """
-    global _ORIGINAL_LOAD, _ORIGINAL_STREAM_GENERATE, _ORIGINAL_GENERATE
+    global _ORIGINAL_LOAD
     global _ORIGINAL_SET_CACHE_LIMIT, _ORIGINAL_SET_WIRED_LIMIT
 
     if config is None:
@@ -37,10 +35,10 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
         mx.metal.set_wired_limit = lambda *args, **kwargs: None
 
     _ORIGINAL_LOAD = mlx_lm.load
-    _ORIGINAL_STREAM_GENERATE = mlx_lm.stream_generate
-    _ORIGINAL_GENERATE = getattr(mlx_lm, "generate", None)
 
-    # 1. Patch LOAD
+    # Patch LOAD — the only patch needed.
+    # stream_generate / generate work unchanged because FlashLLM is a
+    # transparent nn.Module proxy.
     def _flash_load(path, *args, **kwargs):
         if not _should_use_flash(str(path), config):
             return _ORIGINAL_LOAD(path, *args, **kwargs)
@@ -48,30 +46,18 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
         from ..manager import FlashManager
         mgr = FlashManager(config)
         model, tokenizer = mgr.load(path)
-        # Store manager on model for later shutdown
-        model.manager = mgr
+        # Use object.__setattr__ to bypass nn.Module.__setattr__,
+        # which would try to register mgr as a submodule/parameter.
+        object.__setattr__(model, "manager", mgr)
         return model, tokenizer
 
     mlx_lm.load = _flash_load  # type: ignore
 
-    # 2. Patch stream_generate
-    def _flash_stream_generate(model, tokenizer, prompt, **kwargs):
-        # FlashLLM is a drop-in proxy, so we can just use the original pipeline
-        yield from _ORIGINAL_STREAM_GENERATE(model, tokenizer, prompt, **kwargs)
-
-    mlx_lm.stream_generate = _flash_stream_generate  # type: ignore
-
-    # 3. Patch generate
-    if _ORIGINAL_GENERATE:
-        def _flash_generate(model, tokenizer, prompt, **kwargs):
-            return _ORIGINAL_GENERATE(model, tokenizer, prompt, **kwargs)
-        mlx_lm.generate = _flash_generate  # type: ignore
-
 
 def remove_flash_patch() -> None:
     """Restore the original state."""
-    global _ORIGINAL_LOAD, _ORIGINAL_STREAM_GENERATE, _ORIGINAL_GENERATE
-    global _ORIGINAL_SET_CACHE_LIMIT, _ORIGINAL_SET_WIRED_LIMIT, _LAST_LOOP
+    global _ORIGINAL_LOAD
+    global _ORIGINAL_SET_CACHE_LIMIT, _ORIGINAL_SET_WIRED_LIMIT
     
     if _ORIGINAL_LOAD is None:
         return
@@ -81,9 +67,6 @@ def remove_flash_patch() -> None:
     
     # Restore original functions
     mlx_lm.load = _ORIGINAL_LOAD  # type: ignore
-    mlx_lm.stream_generate = _ORIGINAL_STREAM_GENERATE  # type: ignore
-    if _ORIGINAL_GENERATE:
-        mlx_lm.generate = _ORIGINAL_GENERATE  # type: ignore
         
     if _ORIGINAL_SET_CACHE_LIMIT:
         mx.metal.set_cache_limit = _ORIGINAL_SET_CACHE_LIMIT
@@ -91,11 +74,8 @@ def remove_flash_patch() -> None:
         mx.metal.set_wired_limit = _ORIGINAL_SET_WIRED_LIMIT
     
     _ORIGINAL_LOAD = None
-    _ORIGINAL_STREAM_GENERATE = None
-    _ORIGINAL_GENERATE = None
     _ORIGINAL_SET_CACHE_LIMIT = None
     _ORIGINAL_SET_WIRED_LIMIT = None
-    _LAST_LOOP = None
 
 
 def _should_use_flash(model_path: str, config: FlashConfig) -> bool:

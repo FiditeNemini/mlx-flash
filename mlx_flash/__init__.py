@@ -21,15 +21,13 @@ Or via Modelfile:
 from .config import FlashConfig
 from .generation import FlashGenerationLoop, FlashLLM
 from .manager import FlashManager
-from .page_cache import prefetch_array, release_array
+
 
 __all__ = [
     "FlashConfig",
     "FlashManager",
     "FlashLLM",
     "FlashGenerationLoop",
-    "prefetch_array",
-    "release_array",
 ]
 
 __version__ = "0.1.0"
