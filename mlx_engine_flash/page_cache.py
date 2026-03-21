@@ -39,7 +39,7 @@ MADV_FREE       = 5   # macOS ≥ 10.9 (most efficient release)
 # ── load libSystem ─────────────────────────────────────────────────────────
 _libc: ctypes.CDLL | None = None
 
-def _get_libc() -> ctypes.CDLL | None:
+def get_libc() -> ctypes.CDLL | None:
     global _libc
     if _libc is None and _IS_MACOS:
         try:
@@ -73,7 +73,7 @@ def madvise_range(mm: mmap.mmap, offset: int, length: int, advice: int) -> bool:
     Returns True on success, False if madvise is unavailable or fails.
     The call is always page-aligned (rounds down offset, rounds up length).
     """
-    libc = _get_libc()
+    libc = get_libc()
     if libc is None:
         return False
 
@@ -149,7 +149,7 @@ def set_sequential(mm: mmap.mmap, offset: int, length: int) -> bool:
 
 def _madvise_array(arr: Any, advice: int) -> bool:
     """Internal helper to call madvise on the memory backing an MLX array."""
-    libc = _get_libc()
+    libc = get_libc()
     if libc is None:
         return False
     
