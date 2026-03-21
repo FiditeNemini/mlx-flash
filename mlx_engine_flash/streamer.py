@@ -37,16 +37,15 @@ def _get_st_dtype_map() -> dict[str, Any]:
         "U32":  np.dtype("uint32"),
         "U8":   np.dtype("uint8"),
         "BOOL": np.dtype("bool"),
+        # BF16 is stored as raw uint16; interpreted as bfloat16 by MLX.
+        # np.dtype("bfloat16") raises ValueError in NumPy < 2.0.
+        "BF16": np.dtype("uint16"),
     }
-    # Try to add BF16 if available in numpy
-    try:
-        m["BF16"] = np.dtype("bfloat16")
-    except TypeError:
-        # Fallback to uint16; must be bitcast to BF16 when converted to MLX
-        m["BF16"] = np.dtype("uint16")
     return m
 
 _ST_DTYPE_MAP = _get_st_dtype_map()
+
+__all__ = ["SafetensorsIndex", "WeightStreamer", "TensorEntry"]
 
 # Quantised formats stored as raw uint8 blobs in safetensors
 _QUANTISED_DTYPES = {"Q4_0", "Q4_1", "Q4_K", "Q6_K", "Q8_0", "Q2_K", "Q3_K"}

@@ -56,3 +56,18 @@ def test_release_strategies(tmp_mmap):
     for strat in ("free", "dontneed", "none"):
         result = release(tmp_mmap, 0, 4096, strategy=strat)
         assert isinstance(result, bool)
+
+
+def test_madvise_on_closed_mmap(tmp_path):
+    import mmap
+    import os
+    p = tmp_path / "closed_mmap_test.bin"
+    p.write_bytes(b"\x00" * 4096)
+    fd = os.open(str(p), os.O_RDONLY)
+    mm = mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
+    mm.close()
+    os.close(fd)
+    
+    # Should return False (no-op) and NOT raise
+    result = madvise_range(mm, 0, 4096, advice=3) # 3 = WILLNEED
+    assert result is False

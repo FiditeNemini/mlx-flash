@@ -57,8 +57,14 @@ class FlashModelLoader:
         return max(n, 1)
 
     def _detect_moe(self) -> bool:
-        return any(k in self._model_config for k in
-                   ("num_experts", "n_routed_experts", "num_local_experts"))
+        is_moe = any(k in self._model_config for k in
+                    ("num_experts", "n_routed_experts", "num_local_experts"))
+        if is_moe:
+            raise NotImplementedError(
+                "MoE streaming not yet implemented in FlashModelLoader; contributions welcome. "
+                "Track issue #42."
+            )
+        return False
 
     def _validate_quant(self) -> None:
         idx = SafetensorsIndex(self.model_dir)
@@ -135,3 +141,6 @@ class FlashModelLoader:
                 arr = arr.view(mx.bfloat16)
             res[k] = arr
         return res
+
+
+__all__ = ["FlashModelLoader"]

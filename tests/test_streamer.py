@@ -71,7 +71,7 @@ def test_streamer_prefetch_release(tmp_model_dir, flash_config):
 def test_q4_0_decode_shape(tmp_model_dir, flash_config):
     with WeightStreamer(tmp_model_dir, flash_config) as streamer:
         # Q4_0 weights return raw uint8
-        arr = streamer.stream_tensor("model.layers.0.self_attn.q_proj.weight")
+        arr = streamer.stream_tensor("test_q4_tensor")
         # Raw Q4_0 block data: each block = 18 bytes
         assert arr.dtype == np.uint8
 

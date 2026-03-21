@@ -42,21 +42,21 @@ def test_loader_layer_weights_contain_projections(tmp_model_dir, flash_config):
 
 
 def test_loader_quant_validation_warn(tmp_model_dir, flash_config):
-    """min_quant_bits=16 should warn since model has Q4_0."""
+    """min_quant_bits=32 should warn since model has 16-bit (F16)."""
     import warnings
-    flash_config.min_quant_bits = 16
+    flash_config.min_quant_bits = 32
     flash_config.strict_quant = False
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         loader = FlashModelLoader(tmp_model_dir, flash_config)
         loader.open()
         loader.close()
-    assert any("4-bit" in str(warning.message) or "quantis" in str(warning.message).lower()
+    assert any("16-bit" in str(warning.message) or "quantis" in str(warning.message).lower()
                for warning in w), "Expected quant warning"
 
 
 def test_loader_quant_validation_strict(tmp_model_dir, flash_config):
-    flash_config.min_quant_bits = 16
+    flash_config.min_quant_bits = 32
     flash_config.strict_quant = True
     with pytest.raises(ValueError, match="quantis"):
         loader = FlashModelLoader(tmp_model_dir, flash_config)

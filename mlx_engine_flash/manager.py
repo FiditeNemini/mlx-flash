@@ -94,6 +94,7 @@ class FlashManager:
             )
 
         # 4. SETUP FLASH ASSETS
+        self._check_ram(model_dir)
         self._loader = FlashModelLoader(model_dir, self.config).__enter__()
         self._streamer = self._loader._streamer
         self._prefetcher = WeightPrefetcher(self._streamer, self.config, self._loader.n_layers, loader=self._loader)
@@ -230,6 +231,19 @@ class FlashManager:
     def shutdown(self) -> None:
         if self._prefetcher: self._prefetcher.stop()
         if self._loader: self._loader.close()
+
+    def _check_ram(self, model_dir: Path) -> None:
+        import warnings
+        model_gb = sum(f.stat().st_size for f in model_dir.glob("*.safetensors")) / 1e9
+        avail_gb = psutil.virtual_memory().available / 1e9
+        if model_gb > avail_gb and not self.config.enabled:
+            warnings.warn(
+                f"Model is {model_gb:.1f} GB but only {avail_gb:.1f} GB "
+                f"RAM is available. Enable Flash Mode to run this model.",
+                ResourceWarning
+            )
+
+__all__ = ["FlashManager"]
 
 def _log(msg: str) -> None:
     import sys

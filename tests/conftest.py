@@ -105,39 +105,45 @@ def tmp_model_dir(tmp_path_factory):
 
     tensors = {}
     # Embedding
-    embed_data = rand_f16([256, hidden])
-    tensors["model.embed_tokens.weight"] = (embed_data, "F16", [256, hidden])
+    embed_data = rand_f16([256, 256])
+    tensors["model.embed_tokens.weight"] = (embed_data, "F16", [256, 256])
 
     for layer in range(2):
         pfx = f"model.layers.{layer}"
         # Self-attention Q/K/V/O projections (F16)
         for proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
-            data = rand_f16([hidden, hidden])
-            tensors[f"{pfx}.self_attn.{proj}.weight"] = (data, "F16", [hidden, hidden])
+            data = rand_f16([256, 256])
+            tensors[f"{pfx}.self_attn.{proj}.weight"] = (data, "F16", [256, 256])
         # FFN gate + up + down
         for proj, shape in (
-            ("gate_proj", [inter, hidden]),
-            ("up_proj",   [inter, hidden]),
-            ("down_proj", [hidden, inter]),
+            ("gate_proj", [512, 256]),
+            ("up_proj",   [512, 256]),
+            ("down_proj", [256, 512]),
         ):
             data = rand_f16(shape)
             tensors[f"{pfx}.mlp.{proj}.weight"] = (data, "F16", shape)
         # Layer norm (f16, always hot)
-        ln_data = np.ones(hidden, dtype=np.float16).tobytes()
-        tensors[f"{pfx}.input_layernorm.weight"]         = (ln_data, "F16", [hidden])
-        tensors[f"{pfx}.post_attention_layernorm.weight"] = (ln_data, "F16", [hidden])
+        ln_data = np.ones(256, dtype=np.float16).tobytes()
+        tensors[f"{pfx}.input_layernorm.weight"]         = (ln_data, "F16", [256])
+        tensors[f"{pfx}.post_attention_layernorm.weight"] = (ln_data, "F16", [256])
 
     # Final norm + lm_head
-    tensors["model.norm.weight"]  = (np.ones(hidden, dtype=np.float16).tobytes(), "F16", [hidden])
-    tensors["lm_head.weight"]     = (np.random.randn(256, hidden).astype(np.float16).tobytes(), "F16", [256, hidden])
+    tensors["model.norm.weight"]  = (np.ones(256, dtype=np.float16).tobytes(), "F16", [256])
+    tensors["lm_head.weight"]     = (np.random.randn(256, 256).astype(np.float16).tobytes(), "F16", [256, 256])
+
+    # Add a dummy Q4_0 tensor just for dtype testing in test_streamer.py
+    # Each Q4_0 block is 32 elements -> 18 bytes.
+    # 32 elements -> (0.1 scale) + (32 nibbles)
+    q4_data = b"\x00\x3c" + b"\x88" * 16  # scale=1.0, 32 zeros
+    tensors["test_q4_tensor"] = (q4_data, "Q4_0", [32])
 
     _write_safetensors(mdir / "model.safetensors", tensors)
 
     # config.json
     cfg = {
         "model_type": "llama",
-        "hidden_size": hidden,
-        "intermediate_size": inter,
+        "hidden_size": 256,
+        "intermediate_size": 512,
         "num_hidden_layers": 2,
         "num_attention_heads": 4,
         "rms_norm_eps": 1e-6,

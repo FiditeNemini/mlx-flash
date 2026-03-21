@@ -161,6 +161,39 @@ class MoEFlashHandler:
         self._cache: dict[tuple[int, int], dict[str, Any]] = {}
         self._lru: list[tuple[int, int]] = []
 
+    @staticmethod
+    def from_model(
+        model: Any,
+        streamer: WeightStreamer,
+        moe_cfg: MoEConfig,
+        config: FlashConfig,
+    ) -> MoEFlashHandler:
+        """
+        Extract router weights from a loaded model skeleton.
+        Expected weight names: `model.layers.{i}.mlp.gate.weight` (standard).
+        """
+        router_weights = {}
+        for i in range(moe_cfg.n_layers):
+            # Try a few common names for the router/gate
+            found = False
+            for pattern in (
+                f"model.layers.{i}.mlp.gate.weight",
+                f"model.layers.{i}.mlp.router.weight",
+                f"layers.{i}.mlp.gate.weight",
+            ):
+                if pattern in streamer.index:
+                    weights = streamer.stream_tensor(pattern)
+                    # We keep router weights as numpy arrays in MoERouter
+                    router_weights[i] = weights
+                    found = True
+                    break
+            
+            if not found:
+                import warnings
+                warnings.warn(f"Could not find router weights for layer {i} using standard patterns.", UserWarning)
+
+        return MoEFlashHandler(streamer, moe_cfg, config, router_weights)
+
     def load_experts(
         self, expert_idxs: list[int]
     ) -> dict[int, dict[str, Any]]:
@@ -229,3 +262,6 @@ class MoEFlashHandler:
                 print(f"[flash] MoE Cache EVICT: Layer {oldest_key[0]} Expert {oldest_key[1]}", file=sys.stderr)
 
         return result
+
+
+__all__ = ["MoEConfig", "MoERouter", "MoEFlashHandler"]
