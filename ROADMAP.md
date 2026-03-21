@@ -33,9 +33,11 @@ This document outlines the planned milestones for `mlx-flash` as it moves from b
 
 ---
 
-## v1.0.0: Native Integration
-*Focus: Moving from a monkey-patch to a standard feature.*
+## v1.0.0: Native Integration & Autonomous Tuning
+*Focus: Moving from a monkey-patch to a standard, self-optimizing feature.*
 
+- [ ] **Adaptive "Auto-Budget" (Hypothetical)**: Dynamically adjust `ram_budget_gb` based on real-time OS memory pressure (`psutil`).
+- [ ] **Parallel Expert Prefetching (Hypothetical)**: For MoE (Mixtral/DeepSeek), prefetch the *next* expert's weights while the current execution is saturating the GPU.
 - [ ] **Upstream PR to `mlx-lm`**: Propose native `FlashLLM` support to eliminate the need for monkey-patching.
 - [ ] **Official LM Studio Integration**: Seamless "Flash" checkbox in the LM Studio UI.
 - [ ] **Documentation**: Comprehensive API reference and integration guides for other frameworks.
