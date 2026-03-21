@@ -1,20 +1,28 @@
-## Summary
-<!-- What does this PR do? One paragraph. -->
+# Pull Request Template
+
+## Description
+Please include a summary of the change and which issue is fixed.
+
+Fixes # (issue)
 
 ## Type of change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Performance improvement
-- [ ] Documentation
-- [ ] Refactor / cleanup
+- [ ] Bug fix (non-breaking change which fixes an issue)
+- [ ] New feature (non-breaking change which adds functionality)
+- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] Performance optimization
+- [ ] Documentation update
 
-## Testing
-- [ ] Added/updated tests
-- [ ] Ran `pytest tests/` locally — all pass
-- [ ] Ran `ruff check` and `mypy` — no new errors
-- [ ] Tested on real model (if applicable): <!-- model name + Mac spec -->
+## How Has This Been Tested?
+Please describe the tests that you ran to verify your changes.
+- [ ] `pytest tests/test_core_invariant.py`
+- [ ] `pytest tests/`
+- [ ] `flash-bench` (performance verification)
 
-## Checklist
-- [ ] No new dependencies without justification
-- [ ] Docstrings updated for changed public API
-- [ ] CHANGELOG.md updated (under `[Unreleased]`)
+## Checklist:
+- [ ] My code follows the style guidelines of this project (ruff passed)
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] New and existing unit tests pass locally with my changes

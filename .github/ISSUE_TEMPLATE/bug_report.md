@@ -1,40 +1,32 @@
 ---
 name: Bug report
-about: Something isn't working
-title: '[BUG] '
-labels: bug
-assignees: ''
+description: Create a report to help us improve mlx-flash
+labels: [bug]
+assignees: []
+
 ---
 
 **Describe the bug**
-A clear description of what went wrong.
+A clear and concise description of what the bug is.
 
-**Model & Hardware**
-- Model: (e.g. `mlx-community/Meta-Llama-3-70B-Instruct-4bit`)
-- Mac: (e.g. MacBook Air M4, 16 GB)
-- macOS version: (e.g. 15.2)
-- MLX version: `python -c "import mlx.core as mx; print(mx.__version__)"`
-- mlx-lm version: `python -c "import mlx_lm; print(mlx_lm.__version__)"`
-- mlx-flash version: `python -c "import mlx_flash; print(mlx_flash.__version__)"`
-
-**Minimal reproduction**
-```python
-# paste the smallest code that triggers the bug
-```
-
-**Full traceback**
-```
-paste traceback here
-```
-
-**Flash config used**
-```python
-FlashConfig(
-    enabled=True,
-    ram_budget_gb=...,
-    # etc
-)
-```
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Load model '...'
+2. Set '...'
+3. Run '...'
+4. See error
 
 **Expected behavior**
-What did you expect to happen?
+A clear and concise description of what you expected to happen.
+
+**Screenshots/Logs**
+If applicable, add screenshots or terminal logs to help explain your problem.
+
+**Environment (please complete the following information):**
+- Device: [e.g. M1 Max 32GB]
+- OS: [e.g. macOS 14.5]
+- MLX/mlx-lm Version: [e.g. 0.16.0]
+- mlx-flash Version: [e.g. 0.1.0]
+
+**Additional context**
+Add any other context about the problem here.
