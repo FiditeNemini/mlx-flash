@@ -71,13 +71,14 @@ class SafetensorsMmapCache:
         Groups all tensors belonging to `layer_idx` into contiguous or combined byte ranges 
         per physical mmap file to minimize madvise calls.
         """
-        layer_prefix = f"model.layers.{layer_idx}."
+        import re
+        layer_regex = re.compile(rf'\b(?:layers|h|blocks)\.{layer_idx}\.')
         
         # Collect all intervals for this layer, grouped by mmap
         intervals_by_mmap: dict[mmap.mmap, list[tuple[int, int, str]]] = {}
         
         for t_name, info in self.tensor_locations.items():
-            if t_name.startswith(layer_prefix):
+            if layer_regex.search(t_name):
                 mm, start, end, filename = info
                 if mm not in intervals_by_mmap:
                     intervals_by_mmap[mm] = []

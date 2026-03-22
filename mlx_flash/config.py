@@ -61,7 +61,7 @@ class FlashConfig:
     # KV Cache & Prefill Memory Management
     max_kv_size: int | None = None           # None = unlimited; 4096 = safe for 16GB
     kv_keep: int = 250                          # tokens to keep during rotation
-    prefill_chunk_size: int = 512              # Planned v0.2+ (chunked prefill)
+    prefill_chunk_size: int = 32                # Reduced to 32 for memory safety on 16GB Macs
 
     moe_top_k_override: int | None = None   # Planned v0.3+ (MoE weight streaming)
     

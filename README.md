@@ -62,9 +62,12 @@ Standard MLX uses "lazy graph evaluation," which attempts to build a massive gra
 ### 2. The Master Dial: `ram_budget_gb` 📈
 Flash Mode is a hybrid engine. You control exactly how much RAM is traded for speed.
 
-- **Safety Profile (1.0 - 2.0 GB)**: "Slow but Invincible." Streams almost every layer from SSD. Recommended if you are multi-tasking or have limited RAM.
-- **Balanced Profile (4.0 - 8.0 GB)**: Caches ~50% of a 30B model in RAM for a 2-4x speedup. Requires closing other heavy apps.
+- **Safety Profile (1.0 - 2.0 GB)**: "Slow but Invincible." Forces strict weight streaming. Recommended for 30B+ models on limited RAM.
+- **Balanced Profile (4.0 - 8.0 GB)**: "Smart Mode." Caches weights in RAM when possible (10x speedup), but automatically triggers streaming if memory pressure spikes.
 - **Performance Profile (12.0+ GB)**: Keeps most of the model in RAM. Maximum speed, only uses Flash Mode for the "overflow."
+
+> [!TIP]
+> **Use the Experimental Matrix**: Run `python scripts/run_matrix_experiments.py` to find the exact "Performance Cliff" for your specific model and hardware.
 
 > [!TIP]
 > **If your model is "Killed" (Exit code 137)**: This means your `ram_budget_gb` + OS overhead exceeded your physical RAM. Lower the budget by 1.0 GB and restart.
@@ -188,11 +191,12 @@ Synthetic 1.5B Llama-style model with **0.1 GB RAM Budget** (Extreme Stress Test
 
 Benchmarked on **M4 MacBook Air 16 GB** with internal NVMe. With **v0.2 Async I/O Prefetching** enabled, the OS pulls data from the SSD in the background, keeping the GPU constantly saturated.
 
-| Model | File Size | Flash Weight RAM | + KV Cache (2K ctx) | Total | Tok/s (M4 Air) |
+| Model | File Size | Flash Weight RAM | + KV Cache (2K ctx) | Mode | Tok/s (M4 Air) |
 |-------|-----------|------------------|---------------------|-------|----------------|
-| Qwen2.5-3B | 1.9 GB | ~0.3 GB | ~0.2 GB | ~0.7 GB | 60-80 |
-| Nemotron-30B| 17.8 GB | **~0.5 GB** | ~1.8 GB | ~2.3 GB | ~0.1 (4.0 tok/min) |
-| Llama-3-70B | 40 GB | **~0.8 GB** | ~3.2 GB | ~4.0 GB | ~0.05 (2.0 tok/min) |
+| Qwen2.5-3B | 1.9 GB | ~0.3 GB | ~0.2 GB | RAM | 60-80 |
+| Nemotron-30B| 17.8 GB | **~0.5 GB** | ~1.8 GB | **Stream** | **~0.7** |
+| Nemotron-30B| 17.8 GB | **~15 GB** | ~1.8 GB | **RAM** | **12.4** |
+| Llama-3-70B | 40 GB | **~0.8 GB** | ~3.2 GB | Stream | ~0.05 |
 
 > [!NOTE]
 > *Tokens per second benchmarks use `max_kv_size=2048`. Unlimited context lengths will consume more RAM as the KV cache grows.*
@@ -251,9 +255,10 @@ The **☑ Enable Flash Weight Streaming** checkbox is a proposed feature for the
 
 ## Benchmark Your Hardware
 Performance varies significantly depending on your SSD speed and unified memory bandwidth:
-* **M1/M2/M3 Air (Internal NVMe)**: Expect 4-8 tok/s on 30B models.
+* **M1/M2/M3 Air (Internal NVMe)**: Expect 0.5 - 1.0 tok/s on 30B models in Streaming mode.
 * **M4 Pro/Max**: High memory bandwidth significantly improves layer transition speeds.
-* **External Drives**: Running models via Thunderbolt RAIDs is viable; standard USB-C Gen 2 (10Gbps) may be bottlenecked by I/O. **Note:** `mlx-flash` forces OS-level page cache populations via a background thread, mitigating SSD latency as much as physically possible.
+* **External Drives**: Running models via Thunderbolt RAIDs is viable (~0.1 tok/s); standard USB-C Gen 2 (10Gbps) may be bottlenecked by I/O.
+* **The Matrix Tool**: Always use `scripts/run_matrix_experiments.py` to verify your specific I/O floor.
 
 ---
 

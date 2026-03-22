@@ -55,7 +55,16 @@ The solution is `FlashLLM`, a duck-typed `nn.Module` proxy that wraps any mlx-lm
    - `mlx_lm.stream_generate()` calls `FlashLLM(x)` which IS our synchronous loop
    - KV cache is eval'd alongside `h` at each layer, so it never builds a lazy graph either
 
-**Result:** An 18 GB model runs on a 16 GB Mac with a peak active footprint of `< 1.0 GB`.
+## 4. Case Study: Nemotron-30B MoE Stabilization
+
+In version 0.3.x, we encountered a severe linear memory growth (~3GB per 10 layers) when running large Mixture-of-Experts (MoE) models on 16GB hardware.
+
+### The Breakthroughs:
+1. **Silent Indexing Failure**: We discovered that `FlashLLM` was failing to build its weight index because `mlx_lm.load` doesn't always attach a `model_path`. We fixed this by passing the path explicitly during initialization, finally enabling weight orphaning to engage.
+2. **"Smart" vs. "Always" Eviction**: We initially implemented "Always-Stream" mode for stability, which slowed all models to < 1 t/s. We refined this into "Smart Eviction"—a conditional reload that only triggers if the active Metal memory exceeds the user's `ram_budget_gb`.
+3. **Hyper-Aggressive Orphaning**: For 30B+ models, we now orphan the **Embeddings** and **LM Head** (1.4GB overhead) immediately after use, reducing the permanent "Metal floor."
+
+**Result**: Stable 12.4 t/s when cached in RAM, and an unbreakable 0.7 t/s when streaming with only 221MB of active Metal memory.
 
 ## 4. Remaining Hard Problems
 

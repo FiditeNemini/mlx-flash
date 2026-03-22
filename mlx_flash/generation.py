@@ -4,14 +4,15 @@ import sys
 import time
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx_lm
+from mlx_lm.models.base import create_attention_mask
 
-from . import page_cache
 from .config import FlashConfig
+from . import page_cache
 
 
 class FlashLLM(nn.Module):
@@ -47,6 +48,7 @@ class FlashLLM(nn.Module):
         object.__setattr__(self, "_layer_sigs", self._cache_layer_signatures())
         object.__setattr__(self, "disk_cache", None)
         object.__setattr__(self, "mmap_cache", None)
+        object.__setattr__(self, "_materialized_layers", [])
         
         # Build per-layer weight file index for true weight streaming.
         # This maps layer_idx -> [(safetensors_path, [tensor_keys_in_that_file])]
@@ -70,6 +72,7 @@ class FlashLLM(nn.Module):
         if self._model_path is None:
             return [[] for _ in range(self._n_layers)]
         
+        import glob
         import json
         import struct
         
@@ -87,7 +90,7 @@ class FlashLLM(nn.Module):
         elif hasattr(self._model, "backbone") and getattr(self._model, "backbone", None) is self._inner:
             parent_prefix = "backbone."
         
-        index: list[list[tuple[str, list[str]]]] = [[] for _ in range(self._n_layers)]
+        index = [[] for _ in range(self._n_layers)]
         
         sf_files = sorted(self._model_path.glob("*.safetensors"))
         for sf in sf_files:
@@ -120,8 +123,8 @@ class FlashLLM(nn.Module):
         
         return index
     
-    def _reload_layer_weights(self, layer_idx: int, all_lazy: dict):
-        """Re-load a layer's weights as fresh lazy arrays from the pre-loaded dict.
+    def _reload_layer_weights(self, layer_idx: int):
+        """Re-load a layer's weights as fresh lazy arrays from disk.
         
         This orphans the old materialized Metal-resident arrays, allowing
         Python's GC to release the Metal memory allocation.
@@ -143,16 +146,20 @@ class FlashLLM(nn.Module):
             parent_prefix = "model."
         elif hasattr(self._model, "backbone") and getattr(self._model, "backbone", None) is self._inner:
             parent_prefix = "backbone."
-        full_prefix = f"{parent_prefix}{layer_attr_name}.{layer_idx}."
+        import re
+        local_regex = re.compile(rf".*?\b(?:layers|h|blocks)\.{layer_idx}\.(.*)")
         
-        # Collect fresh lazy weights from our token-local cache
+        # Collect fresh lazy weights directly from disk
         fresh_weights = []
-        for _sf_path, keys in entries:
+        for sf_path, keys in entries:
+            lazy_dict = mx.load(sf_path)
             for key in keys:
-                if key in all_lazy:
-                    # Strip the prefix to get the local name (e.g., "mixer.weight")
-                    local_name = key[len(full_prefix):]
-                    fresh_weights.append((local_name, all_lazy[key]))
+                if key in lazy_dict:
+                    val = lazy_dict[key]
+                    m = local_regex.match(key)
+                    if m:
+                        local_name = m.group(1)
+                        fresh_weights.append((local_name, val))
         
         if fresh_weights:
             layer.load_weights(fresh_weights, strict=False)
@@ -228,6 +235,10 @@ class FlashLLM(nn.Module):
     
     def __call__(self, *args, **kwargs) -> mx.array:
         """Synchronous per-layer forward pass."""
+        import gc
+        gc.collect()
+        mx.clear_cache()
+
         # Extract arguments robustly — mlx-lm models vary in (x, mask, cache) vs (x, cache, mask)
         x = args[0] if len(args) > 0 else kwargs.get("x")
         
@@ -253,13 +264,8 @@ class FlashLLM(nn.Module):
         if x is None:
             raise ValueError("FlashLLM.__call__ missing input 'x'")
 
-        # TOKEN-LOCAL WEIGHT CACHE: Load fresh lazy arrays for the entire model
-        # ONCE at the start of the token pass. This eliminates the 52x overhead
-        # of repeatedly parsing safetensors headers in the layer loop.
-        token_weights: dict[str, Any] = {}
-        if self._weight_files:
-            for sf_path in self._weight_files:
-                token_weights.update(cast(dict[str, Any], mx.load(sf_path)))
+        if self._config.debug:
+            print(f"[flash] __call__ input x: {x.shape} (tokens={x.size})", file=sys.stderr)
 
         # Pre-layer: embedding
         h = self._pre_layer_fn(x)
@@ -319,6 +325,9 @@ class FlashLLM(nn.Module):
             # CRITICAL: materialise NOW before the next layer's graph is built
             # We eval 'h' AND the cache state tensors to force the layer's 
             # weights to be consumed and the cache to be updated.
+            import gc
+            gc.collect()
+            
             if cache_entry is not None:
                 if hasattr(cache_entry, "state"):
                     s = cache_entry.state
@@ -362,14 +371,46 @@ class FlashLLM(nn.Module):
                 mem_active = mx.get_active_memory()
             
             budget_bytes = self._config.ram_budget_gb * 1024**3
-            if mem_active > budget_bytes:
-                # TRUE WEIGHT STREAMING: Re-load this layer's weights as fresh lazy
-                # arrays from the token-local cache. This orphans the old materialized
-                # Metal-resident arrays.
-                self._reload_layer_weights(i, token_weights)
+            
+            # Track the materialized layer
+            if i not in self._materialized_layers:
+                self._materialized_layers.append(i)
+                
+            while self._materialized_layers and mem_active > budget_bytes:
+                # TRUE WEIGHT STREAMING: Re-load the oldest materialized layer's weights as fresh lazy
+                # arrays from disk. This orphans the old materialized Metal-resident arrays.
+                oldest_layer = self._materialized_layers.pop(0)
+                
+                if self._config.debug:
+                    l_obj = self._layers[oldest_layer]
+                    # Try to find a large weight to check refcount
+                    target = None
+                    if hasattr(l_obj, "mixer") and hasattr(l_obj.mixer, "switch_mlp"):
+                        target = getattr(l_obj.mixer.switch_mlp.fc1, "weight", None)
+                    elif hasattr(l_obj, "attention"):
+                        target = getattr(l_obj.attention.wq, "weight", None)
+                    
+                    if target is not None:
+                        print(f"[flash] Evicting layer {oldest_layer}. Refcount of weight: {sys.getrefcount(target)}", file=sys.stderr)
+
+                self._reload_layer_weights(oldest_layer)
+                
+                # FORCE Python to destroy orphaned mx.array objects so Metal can free them
+                import gc
+                gc.collect()
+                
                 mx.clear_cache()
-                if self._config.debug and i % 10 == 0:
-                    print(f"[flash] Budget exceeded ({mem_active/1e9:.1f}GB > {self._config.ram_budget_gb}GB). Streaming active.", file=sys.stderr)
+                
+                if self._config.debug:
+                    print(f"[flash] Budget exceeded ({mem_active/1e9:.1f}GB > {self._config.ram_budget_gb}GB). Evicting layer {oldest_layer}", file=sys.stderr)
+                    
+                # Re-check active memory
+                try:
+                    mx.synchronize()
+                    mem_active = mx.metal.get_active_memory()
+                except AttributeError:
+                    mx.synchronize()
+                    mem_active = mx.get_active_memory()
             
             # Telemetry
             if self._config.monitor_queue is not None:
@@ -399,7 +440,12 @@ class FlashLLM(nn.Module):
                       f"Metal active {metal_mb:.0f} MB", file=sys.stderr)
         
         # Post-layer: norm + lm_head
-        return self._post_layer_fn(h)
+        result = self._post_layer_fn(h)
+        mx.eval(result)
+        mx.synchronize()
+        if self._config.debug:
+            print(f"[flash] __call__ finished for tokens={x.size}", file=sys.stderr)
+        return result
     
     def parameters(self):
         return self._model.parameters()
@@ -470,34 +516,46 @@ class FlashGenerationLoop:
         kwargs["sampler"] = make_sampler(**sampler_args)
 
         # Inject DiskKVCache if enabled
-        if getattr(self.config, "disk_kv_enabled", False) and "prompt_cache" not in kwargs:
-            import shutil
-            import tempfile
-            import uuid
+        if getattr(self.config, "disk_kv_enabled", False):
+            if "prompt_cache" not in kwargs:
+                from mlx_flash.disk_kv_cache import DiskKVCache
+                import shutil
+                import tempfile
+                import uuid
 
-            from mlx_flash.disk_kv_cache import DiskKVCache
+                kv_dir_cfg = getattr(self.config, "disk_kv_dir", "")
+                if kv_dir_cfg:
+                    kv_dir = Path(kv_dir_cfg)
+                else:
+                    kv_dir = Path(tempfile.gettempdir()) / f"mlx_flash_kv_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
-            kv_dir_cfg = getattr(self.config, "disk_kv_dir", "")
-            if kv_dir_cfg:
-                kv_dir = Path(kv_dir_cfg)
-            else:
-                kv_dir = Path(tempfile.gettempdir()) / f"mlx_flash_kv_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+                # Wipe old cache to ensure clean context
+                if kv_dir.exists():
+                    shutil.rmtree(kv_dir, ignore_errors=True)
+                kv_dir.mkdir(parents=True, exist_ok=True)
 
-            # Wipe old cache to ensure clean context
-            if kv_dir.exists():
-                shutil.rmtree(kv_dir, ignore_errors=True)
-            kv_dir.mkdir(parents=True, exist_ok=True)
+                max_tokens = getattr(self.config, "disk_kv_max_tokens", None)
 
-            max_tokens = getattr(self.config, "disk_kv_max_tokens", None)
+                # Build the array of DiskKVCaches
+                prompt_cache = [DiskKVCache(layer_idx=i, cache_dir=str(kv_dir), max_tokens=max_tokens)
+                              for i in range(self.flash_model._n_layers)]
+                kwargs["prompt_cache"] = prompt_cache
+                self._disk_kv_caches = prompt_cache
 
-            # Build the array of DiskKVCaches
-            prompt_cache = [DiskKVCache(layer_idx=i, cache_dir=str(kv_dir), max_tokens=max_tokens)
-                          for i in range(self.flash_model._n_layers)]
-            kwargs["prompt_cache"] = prompt_cache
-            self._disk_kv_caches = prompt_cache
+                if self.config.debug:
+                    print(f"[flash] Injected {len(prompt_cache)} DiskKVCache layers at {kv_dir}", file=sys.stderr)
 
-            if self.config.debug:
-                print(f"[flash] Injected {len(prompt_cache)} DiskKVCache layers at {kv_dir}", file=sys.stderr)
+        # Enforce chunked prefill by default to solve the compilation reference leak.
+        # Compiled prefill (mlx-lm default) holds references to old weights,
+        # preventing them from being orphaned. Chunked prefill (step_size > 0)
+        # uses an iterative non-compiled path that respects orphaning.
+        if "prefill_step_size" not in kwargs:
+            kwargs["prefill_step_size"] = 1
+
+        # CRITICAL: clear any dangling references from mlx_lm.load()
+        import gc
+        gc.collect()
+        mx.clear_cache()
 
         for result in mlx_lm.stream_generate(
             self.flash_model, self.tokenizer, prompt,
