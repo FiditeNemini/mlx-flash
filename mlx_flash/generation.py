@@ -321,11 +321,21 @@ class FlashGenerationLoop:
         
         if isinstance(model_or_path, (str, Path)):
             self.model, self.tokenizer = mlx_lm.load(str(model_or_path), lazy=True)[:2]
+            
+            if getattr(self.config, "tiled_execution", False):
+                from .tiled import apply_tiling
+                apply_tiling(self.model, tile_size=getattr(self.config, "tile_size", 1024))
+                
             self.flash_model = FlashLLM(self.model, config, model_path=model_or_path)
             from .safetensors_mmap import SafetensorsMmapCache
             self.flash_model.mmap_cache = SafetensorsMmapCache(model_or_path)
         else:
             self.model = model_or_path
+            
+            if getattr(self.config, "tiled_execution", False):
+                from .tiled import apply_tiling
+                apply_tiling(self.model, tile_size=getattr(self.config, "tile_size", 1024))
+                
             self.tokenizer = tokenizer
             self.flash_model = FlashLLM(self.model, config)
             

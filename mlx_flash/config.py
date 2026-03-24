@@ -70,6 +70,10 @@ class FlashConfig:
     disk_kv_dir: str = ""                    # Empty = auto-generate unique path
     disk_kv_max_tokens: int | None = None    # None = unlimited; set to bound disk usage
     
+    # Blockwise Tiled Execution
+    tiled_execution: bool = False
+    tile_size: int = 1024
+    
     # Telemetry
     monitor_queue: queue.Queue | None = None # If set, emit telemetry events
 
