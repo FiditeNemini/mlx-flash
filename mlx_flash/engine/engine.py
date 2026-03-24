@@ -7,7 +7,7 @@ from mlx_lm.sample_utils import make_sampler
 import gc
 
 from ..config import FlashConfig
-from .hooks import ExecutionContext, HookRegistry
+from .hooks import ExecutionContext, ExecutionGraph
 from .strategies import LayerStrategy, StandardStrategy
 
 class FlashEngine:
@@ -18,13 +18,14 @@ class FlashEngine:
     def __init__(self, model: nn.Module, tokenizer: Any, config: FlashConfig):
         self.config = config
         self.tokenizer = tokenizer
-        self.registry = HookRegistry()
+        self.registry = ExecutionGraph()
         
         # Register standard hooks based on configuration
         from .hooks import PipeliningHook, TilingHook, DiagnosticsHook
-        self.registry.register(TilingHook(self.config))
-        self.registry.register(PipeliningHook(self.config))
-        self.registry.register(DiagnosticsHook(self.config))
+        # Order of addition no longer matters due to explicit topological sorting
+        self.registry.add_node(DiagnosticsHook(self.config))
+        self.registry.add_node(PipeliningHook(self.config))
+        self.registry.add_node(TilingHook(self.config))
         
         # 1. Structural Phase: Allow hooks to safely rewrite the model tree
         # (e.g. replacing nn.Linear with TiledLinear)
