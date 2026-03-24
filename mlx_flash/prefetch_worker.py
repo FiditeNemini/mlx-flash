@@ -62,15 +62,15 @@ class BackgroundPrefetcher:
                         try:
                             # 1. Ask Bandwidth Controller for throttle limits
                             requested_chunk = min(base_chunk_size, end - curr)
-                            approved_chunk, sleep_sec = self.bandwidth_controller.calculate_throttle(requested_chunk)
                             
-                            if sleep_sec > 0:
-                                time.sleep(sleep_sec)
-                                
-                            # Ensure alignment
-                            chunk_size = (approved_chunk // align_bytes) * align_bytes if align_bytes > 0 else approved_chunk
+                            # Ensure alignment before asking for tokens
+                            chunk_size = (requested_chunk // align_bytes) * align_bytes if align_bytes > 0 else requested_chunk
                             if chunk_size == 0: chunk_size = align_bytes # Prevent infinite loop
                             chunk_size = min(chunk_size, end - curr)
+                            
+                            sleep_sec = self.bandwidth_controller.consume_tokens(chunk_size)
+                            if sleep_sec > 0:
+                                time.sleep(sleep_sec)
                             
                             t_read_0 = time.perf_counter()
                             os.pread(fd, chunk_size, curr)

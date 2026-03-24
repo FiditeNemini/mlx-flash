@@ -89,6 +89,12 @@ class FlashEngine:
         is_decode = ctx.x.shape[1] <= 1 if hasattr(ctx.x, "shape") else True
         ctx.metadata['pipeline_depth'] = getattr(self.config, 'pipeline_depth', 4) if is_decode else 1
         
+        if not hasattr(self, '_warmup_done'):
+            self._warmup_done = True
+            self._is_warmup = True
+        else:
+            self._is_warmup = False
+        
         self.registry.dispatch("on_generation_start", ctx)
         
         layers = self.layers
@@ -128,7 +134,17 @@ class FlashEngine:
             ctx.x = active_strategy.execute(ctx, layer)
             
             t1 = time.perf_counter()
-            ctx.metadata['compute_time'] = t1 - t0
+            compute_time = t1 - t0
+            ctx.metadata['compute_time'] = compute_time
+            
+            mmap_cache = getattr(self, 'mmap_cache', None)
+            if mmap_cache is None and hasattr(self.model, 'manager'):
+                 mmap_cache = getattr(self.model.manager.model, 'mmap_cache', None)
+            
+            if mmap_cache and hasattr(mmap_cache, 'prefetch_worker'):
+                controller = getattr(mmap_cache.prefetch_worker, 'bandwidth_controller', None)
+                if controller and hasattr(controller, 'register_compute_time'):
+                    controller.register_compute_time(i, compute_time)
             
             # 3. Trigger post-layer hooks (e.g. Memory Eviction, Profiler update)
             self.registry.dispatch("on_layer_end", ctx, layer)

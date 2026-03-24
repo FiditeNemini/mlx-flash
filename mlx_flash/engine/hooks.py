@@ -100,6 +100,8 @@ class PipeliningHook(InferenceHook):
             self._dense_strategy = PipelinedDenseStrategy(self._executor)
             self._moe_strategy = PipelinedMoEStrategy(self._executor, self._moe_prefetcher)
 
+        self._executor.disable_prefetch = getattr(ctx.engine, '_is_warmup', False)
+
         # Assign strategies per layer
         for i, layer in enumerate(ctx.engine.layers):
             # Detect MoE layer

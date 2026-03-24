@@ -15,7 +15,7 @@ class PipelinedExecutor:
         
     def _enqueue_tensor(self, layer_idx: int, tensor_name_hint: str):
         """Asks the background worker to load specific tensors based on name hints."""
-        if not self.mmap_cache:
+        if not self.mmap_cache or getattr(self, 'disable_prefetch', False):
             return
             
         ranges = self.mmap_cache.get_layer_ranges(layer_idx)
@@ -28,6 +28,8 @@ class PipelinedExecutor:
             self.mmap_cache.prefetch_worker.enqueue(filename, start, end - start, layer_idx, align_bytes=align_bytes)
 
     def _wait_for_layer(self, layer_idx: int):
+        if getattr(self, 'disable_prefetch', False):
+            return
         if self.mmap_cache and hasattr(self.mmap_cache, 'wait_for_layer'):
             self.mmap_cache.wait_for_layer(layer_idx)
 

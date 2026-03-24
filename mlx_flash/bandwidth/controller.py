@@ -3,75 +3,90 @@ import collections
 
 class UnifiedBandwidthController:
     """
-    Manages Apple Silicon shared memory bandwidth by dynamically throttling 
-    background IO when the GPU needs maximum memory bandwidth for compute.
+    PID-based control-theoretic bandwidth scheduler for Apple Silicon shared memory.
     """
-    def __init__(self, max_bandwidth_gb_s: float = 60.0):
-        # Maximum theoretical unified memory bandwidth (e.g. M1 Max = 400 GB/s)
-        # But we only care about the bandwidth available to the CPU/SSD path.
-        self.max_bandwidth_bytes_s = max_bandwidth_gb_s * 1024**3
+    def __init__(self, target_degradation=0.05):
+        self.target_degradation = target_degradation
+        self.base_times = {}
         
-        # Track recent read speeds to estimate current system load
-        self.recent_reads = collections.deque(maxlen=10) 
+        # PID Tuning (Asymmetric)
+        self.Kp_brake = 5e8    # Aggressive cut: bytes/sec to cut per second of error
+        self.Kp_accel = 5e7    # Gentle add: bytes/sec to add per second of spare time
+        self.Ki = 1e7          # Integral gain
         
-        # State toggle controlled by the GlobalScheduler
-        self.gpu_is_busy = False
+        self.integral = 0.0
+        self.I_max = 5e8
+        self.I_min = -5e8
         
-        # Throttle configuration
-        self.throttle_sleep_sec = 0.001
-        self.max_chunk_size_bytes = 16 * 1024 * 1024
+        self.B_limit = 1e9     # Start optimistic: 1 GB/s
+        self.B_max = 5e9       # Physical ceiling
+        self.B_min = 1e7       # 10 MB/s absolute minimum to prevent starvation
         
-    def set_gpu_state(self, is_busy: bool):
-        """Called by the executor/scheduler right before and after mx.eval()"""
-        self.gpu_is_busy = is_busy
+        self.ema_alpha = 0.3
+        self.current_ema = {}
+
+        # Token Bucket State
+        self.tokens = 2 * 1024 * 1024 # Start with 2MB capacity
+        self.max_tokens = 2 * 1024 * 1024
+        self.last_token_update = time.perf_counter()
 
     def update_stats(self, bytes_read: int, duration_sec: float):
-        """Called by the IO worker after a pread()"""
-        if duration_sec > 0:
-            bw = bytes_read / duration_sec
-            self.recent_reads.append(bw)
+        # Kept for interface compatibility with existing IO worker code
+        pass
 
-    def get_estimated_bandwidth(self) -> float:
-        if not self.recent_reads:
-            return self.max_bandwidth_bytes_s
-        return sum(self.recent_reads) / len(self.recent_reads)
+    def register_compute_time(self, layer_idx: int, t_comp: float):
+        # 1. Warmup / Uncontended Baseline
+        if layer_idx not in self.base_times:
+            self.base_times[layer_idx] = t_comp
+            self.current_ema[layer_idx] = t_comp
+            return
 
-    def calculate_throttle(self, requested_chunk_size: int) -> tuple[int, float]:
-        """
-        Determines if the IO thread should read a smaller chunk, or sleep,
-        based on the current GPU state and memory controller saturation.
-        Returns: (approved_chunk_size, sleep_sec_before_read)
-        """
-        # 1. If GPU is idle, BLAST the IO (No throttling)
-        if not self.gpu_is_busy:
-            return min(requested_chunk_size, self.max_chunk_size_bytes), 0.0
-            
-        # 2. If GPU is busy, we must throttle. 
-        # Check if the memory controller is showing signs of saturation.
-        # Apple NVMe pread() latency spikes exponentially when the GPU is saturating
-        # the UMA fabric.
-        current_bw = self.get_estimated_bandwidth()
+        # Outlier rejection (e.g., OS context switch, SLC flush)
+        if t_comp > self.base_times[layer_idx] * 3.0:
+            return 
+
+        # 2. Filter Update
+        self.current_ema[layer_idx] = (self.ema_alpha * t_comp) + \
+                                      ((1 - self.ema_alpha) * self.current_ema[layer_idx])
+
+        # 3. Error Calculation
+        t_target = self.base_times[layer_idx] * (1.0 + self.target_degradation)
+        error = t_target - self.current_ema[layer_idx] 
+
+        # 4. Deadband
+        if abs(error) < (self.base_times[layer_idx] * 0.01):
+            error = 0.0
+
+        # 5. PID Math
+        Kp = self.Kp_accel if error > 0 else self.Kp_brake
+        p_term = Kp * error
         
-        # If bandwidth has dropped significantly below theoretical, the fabric is saturated.
-        fabric_saturation_ratio = current_bw / self.max_bandwidth_bytes_s
+        # Conditional Integration (Anti-windup)
+        if not (self.B_limit >= self.B_max and error > 0) and \
+           not (self.B_limit <= self.B_min and error < 0):
+            self.integral += (self.Ki * error)
+            self.integral = max(self.I_min, min(self.I_max, self.integral))
+
+        # 6. Actuation Output
+        self.B_limit = self.B_limit + p_term + self.integral
+        self.B_limit = max(self.B_min, min(self.B_max, self.B_limit))
+
+    def consume_tokens(self, requested_bytes: int) -> float:
+        """Returns sleep time required to satisfy requested bytes."""
+        now = time.perf_counter()
+        elapsed = now - self.last_token_update
+        self.last_token_update = now
         
-        # Heuristic:
-        # If saturation is high (ratio is low, e.g. < 0.2), we must aggressively back off
-        # to let the GPU finish its MatMul.
-        if fabric_saturation_ratio < 0.3:
-            # Drop chunk size to 1MB to prevent locking the controller
-            approved_chunk = min(requested_chunk_size, 1024 * 1024)
-            # Sleep slightly to yield bus cycles
-            sleep_sec = self.throttle_sleep_sec * 2 
-            return approved_chunk, sleep_sec
+        # Add new tokens based on B_limit
+        new_tokens = elapsed * self.B_limit
+        self.tokens = min(self.max_tokens, self.tokens + new_tokens)
+        
+        if self.tokens >= requested_bytes:
+            self.tokens -= requested_bytes
+            return 0.0
             
-        elif fabric_saturation_ratio < 0.6:
-            # Drop chunk size to 4MB
-            approved_chunk = min(requested_chunk_size, 4 * 1024 * 1024)
-            return approved_chunk, self.throttle_sleep_sec
-            
-        else:
-            # GPU is computing, but not saturating bandwidth (e.g. vector-matrix in decode)
-            # Safe to use standard chunks, but maybe add a tiny sleep just in case.
-            approved_chunk = min(requested_chunk_size, 8 * 1024 * 1024)
-            return approved_chunk, 0.0
+        # Deficit handling
+        deficit = requested_bytes - self.tokens
+        self.tokens = 0.0 # Consume whatever we have
+        sleep_sec = deficit / self.B_limit
+        return sleep_sec
