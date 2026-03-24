@@ -34,3 +34,5 @@ test_models/
 test_flash_scaling.py
 docs/benchmarks_nemotron_cascade.md
 docs/INTERNAL_FINDINGS.md
+.hypothesis/
+.coverage

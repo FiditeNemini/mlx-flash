@@ -10,34 +10,37 @@ This document outlines the planned milestones for `mlx-flash` as it moves from b
 - [ ] **Sampler Parity**: Ensure 100% numerical parity with standard `mlx-lm` for all sampling parameters.
 - [ ] **Improved Diagnostics**: More granular RAM profiling in `flash-monitor`.
 
-## v0.2.0: Background I/O & Disk KV
-*Focus: Eliminating I/O latency and handling massive contexts.*
+## v0.2.x: The Engine Rewrite & Optimizations
+*Focus: Replacing monkey patches with robust structural pipelines.*
 
-- [x] **Background I/O Thread**: Initial implementation complete.
-- [x] **Stable Disk KV Cache**: Production-ready offloading in v0.3.2.
-- [x] **Adaptive Budgeting**: Dynamic `ram_budget_gb` logic implemented in v0.3.5.
+- [x] **Hook-Based Architecture**: Moved to a clean Event-Driven FlashEngine.
+- [x] **Block-wise Tiled Execution**: Partitioning massive linear layers.
+- [x] **Sub-Component Pipelining**: Overlapping IO with specific layer ops.
+- [x] **Mixed-Precision Quantization**: Dynamically adapting block bits.
+- [x] **Quantized Disk KV Cache**: 4x reduction in out-of-core memory.
 
-## v0.3.5: True Weight Streaming & "Any Model" Support
-*Focus: Running models larger than RAM with deterministic memory footprints.*
+## v0.3.x: Schedulers & Resource Management
+*Focus: Advanced global optimization models.*
 
-- [x] **True Weight Streaming**: Force materialization and eviction of layer weights.
-- [x] **Token-Local Caching**: Optimized safetensors loading for 50x speedup.
-- [x] **30B+ Verification**: Success on 16GB hardware with <0.5GB Metal RAM.
+- [x] **Adaptive Predictive Prefetching**: Basic lookahead algorithms.
+- [x] **Unified Bandwidth Controller**: Fabric-aware IO throttling.
+- [x] **Multi-Tier Cache Manager**: Cold, Warm, Hot unified modeling.
+- [x] **Learned Online Cost Model**: RLS solvers predicting IO latency.
 
-## v0.4.0: High-Performance MoE & Expert Streaming
-*Focus: Making massive MoE models (Mixtral, DeepSeek) run at 10+ tok/s.*
+## v0.4.x: High-Performance MoE
+*Focus: Making massive MoE models (Mixtral, DeepSeek) run natively.*
 
-- [ ] **Expert Prefetching**: Predictively load the next top-K experts while the current experts are executing.
-- [ ] **Layer Skipping Support**: Improved logic for architectures that support dynamic layer execution.
-- [ ] **Multi-GPU / Multi-Node (Experimental)**: Exploring streaming across multiple unified memory pools.
+- [x] **Speculative Expert Prefetching**: CPU router lookaheads.
+- [x] **Token-to-Expert Affinity Batching**: O(1) Pre-sorting for prefill.
+- [ ] **Speculative decoding awareness**: Fast/Slow model coordination.
+- [ ] **macOS 15 / Sequoia IOMemoryDescriptor**: Zero-copy native DMA.
 
 ---
 
 ## v1.0.0: Native Integration & Autonomous Tuning
-*Focus: Moving from a monkey-patch to a standard, self-optimizing feature.*
+*Focus: Moving from a standalone engine to a standard feature.*
 
-- [ ] **Adaptive "Auto-Budget" (Hypothetical)**: Dynamically adjust `ram_budget_gb` based on real-time OS memory pressure (`psutil`).
-- [ ] **Parallel Expert Prefetching (Hypothetical)**: For MoE (Mixtral/DeepSeek), prefetch the *next* expert's weights while the current execution is saturating the GPU.
-- [ ] **Upstream PR to `mlx-lm`**: Propose native `FlashLLM` support to eliminate the need for monkey-patching.
+- [ ] **Adaptive "Auto-Budget"**: Dynamically adjust `ram_budget_gb` based on real-time OS memory pressure (`psutil`).
+- [ ] **Upstream PR to `mlx-lm`**: Propose native `FlashLLM` support to eliminate the need for intercept layers.
 - [ ] **Official LM Studio Integration**: Seamless "Flash" checkbox in the LM Studio UI.
 - [ ] **Documentation**: Comprehensive API reference and integration guides for other frameworks.
