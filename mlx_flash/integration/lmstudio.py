@@ -78,6 +78,7 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
                 # 2. Only replace Attention-style caches (KVCache) with DiskKVCache
 
                 from ..disk_kv_cache import DiskKVCache
+                from ..kv_cache.quantized_disk_cache import QuantizedDiskKVCache
                 
                 final_cache = []
                 for i, c in enumerate(native_cache):
@@ -85,7 +86,13 @@ def apply_flash_patch(config: FlashConfig | None = None) -> None:
                     # We only want to swap the KVCache (which grows over time).
                     name = c.__class__.__name__
                     if "KVCache" in name and "ArraysCache" not in name:
-                        final_cache.append(DiskKVCache(i, cache_dir=kv_dir, max_tokens=max_tokens))
+                        if getattr(config, 'kv_cache_quantized', False):
+                            final_cache.append(QuantizedDiskKVCache(
+                                i, cache_dir=kv_dir, max_tokens=max_tokens, 
+                                bits=getattr(config, 'kv_cache_bits', 4)
+                            ))
+                        else:
+                            final_cache.append(DiskKVCache(i, cache_dir=kv_dir, max_tokens=max_tokens))
                     else:
                         final_cache.append(c)
                 
