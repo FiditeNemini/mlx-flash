@@ -20,7 +20,18 @@ class ExpertCache:
         if key in self.cache:
             # Move to end to mark as recently used
             self.cache.move_to_end(key)
+            try:
+                from benchmarks.profiler.profiler import StreamingProfiler
+                StreamingProfiler().record_moe_cache(hit=True)
+            except ImportError:
+                pass
             return self.cache[key]
+            
+        try:
+            from benchmarks.profiler.profiler import StreamingProfiler
+            StreamingProfiler().record_moe_cache(hit=False)
+        except ImportError:
+            pass
         return None
 
     def put(self, layer_idx: int, expert_idx: int, expert_weights: Any):

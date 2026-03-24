@@ -258,7 +258,7 @@ class FlashLLM(nn.Module):
                     cache_entry = cache
             
             if pipelined_executor is not None:
-                t0_compute = time.perf_counter()
+                t0_layer = time.perf_counter()
                 
                 # Dynamic routing for MoE vs Dense
                 if moe_prefetcher is not None and (hasattr(layer, "mlp") and hasattr(layer.mlp, "gate") or hasattr(layer, "mixer") and hasattr(layer.mixer, "gate")):
@@ -270,7 +270,16 @@ class FlashLLM(nn.Module):
                         h, layer, i, mask=mask if has_mask else None, cache=cache_entry if has_cache else None
                     )
                     
-                compute_time = time.perf_counter() - t0_compute
+                t1_layer = time.perf_counter()
+                
+                if getattr(self._config, 'enable_profiling', False):
+                    from benchmarks.profiler.profiler import StreamingProfiler
+                    # Simplified tracking for pipeline model: assumes total time is compute
+                    # since internal pipeline executor does explicit waits. We can refine this later.
+                    # We pass 0.0 for io_wait for now to avoid breaking the pipeline internal logic.
+                    StreamingProfiler().record_layer_pass(i, 0.0, t1_layer - t0_layer)
+                    
+                compute_time = t1_layer - t0_layer
                 if self.mmap_cache and hasattr(self.mmap_cache, 'record_compute_time'):
                     self.mmap_cache.record_compute_time(compute_time)
             else:
@@ -280,7 +289,11 @@ class FlashLLM(nn.Module):
                         if i + p < self._n_layers:
                             self.mmap_cache.prefetch_layer_background(i + p)
                     if hasattr(self.mmap_cache, 'wait_for_layer'):
+                        t_wait_start = time.perf_counter()
                         self.mmap_cache.wait_for_layer(i)
+                        io_wait_time = time.perf_counter() - t_wait_start
+                    else:
+                        io_wait_time = 0.0
                         
                 call_kwargs = {}
                 if has_mask: call_kwargs["mask"] = mask
@@ -301,6 +314,12 @@ class FlashLLM(nn.Module):
                 
                 mx.synchronize()
                 compute_time = time.perf_counter() - t0_compute
+                
+                if getattr(self._config, 'enable_profiling', False):
+                    from benchmarks.profiler.profiler import StreamingProfiler
+                    io_wait_time = io_wait_time if 'io_wait_time' in locals() else 0.0
+                    StreamingProfiler().record_layer_pass(i, io_wait_time, compute_time)
+                    
                 if self.mmap_cache and hasattr(self.mmap_cache, 'record_compute_time'):
                     self.mmap_cache.record_compute_time(compute_time)
 
@@ -390,6 +409,10 @@ class FlashGenerationLoop:
         detokenizer.reset()
 
         for token, _ in generate_step(prompt_arr, self.flash_model, **kwargs):
+            if getattr(self.config, 'enable_profiling', False):
+                from benchmarks.profiler.profiler import StreamingProfiler
+                StreamingProfiler().record_token()
+                
             tid = token.item() if hasattr(token, "item") else token
             detokenizer.add_token(tid)
             if detokenizer.last_segment: yield detokenizer.last_segment

@@ -77,6 +77,9 @@ class FlashConfig:
     # Sub-component Graph Pipelining 
     pipelined_execution: bool = False
     
+    # Benchmarking and Profiling
+    enable_profiling: bool = False
+    
     # Telemetry
     monitor_queue: queue.Queue | None = None # If set, emit telemetry events
 

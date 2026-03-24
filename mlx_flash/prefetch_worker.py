@@ -54,7 +54,13 @@ class BackgroundPrefetcher:
                     while curr < end and self.running:
                         try:
                             chunk = min(chunk_size, end - curr)
+                            t_read_0 = time.perf_counter()
                             os.pread(fd, chunk, curr)
+                            t_read_1 = time.perf_counter()
+                            
+                            from benchmarks.profiler.profiler import StreamingProfiler
+                            StreamingProfiler().record_pread(t_read_1 - t_read_0, chunk)
+                            
                             curr += chunk
                         except Exception:
                             break
