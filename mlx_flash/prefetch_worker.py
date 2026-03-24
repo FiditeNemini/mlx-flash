@@ -20,6 +20,9 @@ class BackgroundPrefetcher:
         self.compute_ema = 0.0
         self.io_ema = 0.0
         
+        from mlx_flash.bandwidth.controller import UnifiedBandwidthController
+        self.bandwidth_controller = UnifiedBandwidthController()
+        
         self.queue: queue.Queue[tuple[Optional[int], str, int, int]] = queue.Queue(maxsize=16) 
         self.completed_prefetches = set()
         
@@ -47,21 +50,34 @@ class BackgroundPrefetcher:
                     end = offset + length
                     curr = offset
                     
-                    # Ensure chunk size perfectly aligns with quantization block boundaries
-                    # (e.g. 18 bytes for Q4_0, 34 bytes for Q8_0) to prevent partial block reads
-                    chunk_size = (base_chunk_size // align_bytes) * align_bytes if align_bytes > 0 else base_chunk_size
-                    
                     while curr < end and self.running:
                         try:
-                            chunk = min(chunk_size, end - curr)
+                            # 1. Ask Bandwidth Controller for throttle limits
+                            requested_chunk = min(base_chunk_size, end - curr)
+                            approved_chunk, sleep_sec = self.bandwidth_controller.calculate_throttle(requested_chunk)
+                            
+                            if sleep_sec > 0:
+                                time.sleep(sleep_sec)
+                                
+                            # Ensure alignment
+                            chunk_size = (approved_chunk // align_bytes) * align_bytes if align_bytes > 0 else approved_chunk
+                            if chunk_size == 0: chunk_size = align_bytes # Prevent infinite loop
+                            chunk_size = min(chunk_size, end - curr)
+                            
                             t_read_0 = time.perf_counter()
-                            os.pread(fd, chunk, curr)
+                            os.pread(fd, chunk_size, curr)
                             t_read_1 = time.perf_counter()
                             
-                            from benchmarks.profiler.profiler import StreamingProfiler
-                            StreamingProfiler().record_pread(t_read_1 - t_read_0, chunk)
+                            duration = t_read_1 - t_read_0
+                            self.bandwidth_controller.update_stats(chunk_size, duration)
                             
-                            curr += chunk
+                            try:
+                                from benchmarks.profiler.profiler import StreamingProfiler
+                                StreamingProfiler().record_pread(duration, chunk_size)
+                            except ImportError:
+                                pass
+                                
+                            curr += chunk_size
                         except Exception:
                             break
                             
