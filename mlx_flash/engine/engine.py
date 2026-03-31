@@ -132,7 +132,7 @@ class FlashEngine:
                 else:
                     ctx.cache_entry = ctx.cache
 
-            # 1. Trigger pre-layer hooks (e.g. Prefetch N layers ahead)
+        # 1. Trigger pre-layer hooks (e.g. Prefetch N layers ahead)
             self.registry.dispatch("on_layer_start", ctx, layer)
             
             t0 = time.perf_counter()
