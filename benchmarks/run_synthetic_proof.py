@@ -47,7 +47,8 @@ def create_massive_synthetic(mdir: Path, n_layers=24, hidden_dim=2048):
     rng = np.random.default_rng(42)
     
     def rand_f16(shape: list[int]) -> bytes:
-        return rng.standard_normal(shape).astype(np.float16).tobytes()
+        # Scale down weights to prevent logit explosion during PPL tests
+        return (rng.standard_normal(shape) * 0.01).astype(np.float16).tobytes()
 
     tensors = {}
     embed_data = rand_f16([hidden_dim, hidden_dim])

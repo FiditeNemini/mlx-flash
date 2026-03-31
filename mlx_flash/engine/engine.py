@@ -85,6 +85,11 @@ class FlashEngine:
         ctx.x = self.pre_layer_fn(ctx.x)
         if isinstance(ctx.mask, str): ctx.mask = None
         
+        # Parity with mlx_lm: Generate causal mask if not provided
+        if ctx.mask is None and ctx.x.shape[1] > 1:
+            L = ctx.x.shape[1]
+            ctx.mask = mx.triu(mx.full((L, L), -mx.inf, dtype=ctx.x.dtype), k=1)
+        
         # Determine the pipelining depth constraint based on phase
         is_decode = ctx.x.shape[1] <= 1 if hasattr(ctx.x, "shape") else True
         ctx.metadata['pipeline_depth'] = getattr(self.config, 'pipeline_depth', 4) if is_decode else 1
