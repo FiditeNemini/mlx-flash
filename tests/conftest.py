@@ -145,19 +145,20 @@ def tmp_model_dir(tmp_path_factory):
     (mdir / "config.json").write_text(json.dumps(cfg))
 
     # Minimal valid tokenizer.json for Transformers
+    vocab = {"<unk>": 0, "<s>": 1, "</s>": 2, **{f"w{i}": i for i in range(3, 256)}}
     tok_cfg = {
         "version": "1.0",
         "truncation": None,
         "padding": None,
         "added_tokens": [],
+        "pre_tokenizer": {"type": "Whitespace"},
         "model": {
-            "type": "BPE",
+            "type": "WordLevel",
             # Full vocab covering the model's 256-id output space so that
             # generated ids decode to visible text (ids outside the vocab
             # decode to '' and would make stream output look empty).
-            "vocab": {"<unk>": 0, "<s>": 1, "</s>": 2,
-                      **{f"w{i}": i for i in range(3, 256)}},
-            "merges": []
+            "vocab": vocab,
+            "unk_token": "<unk>",
         }
     }
     (mdir / "tokenizer.json").write_text(json.dumps(tok_cfg))
