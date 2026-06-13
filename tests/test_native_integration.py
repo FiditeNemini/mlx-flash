@@ -7,16 +7,16 @@ from mlx_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
 
 
 def test_native_stream_generate_with_patch(tmp_model_dir):
-    """Verify that mlx_lm.stream_generate works with patched FlashLLM."""
+    """Verify that mlx_lm.stream_generate works with the patched Flash proxy."""
     # 1. Apply patch
     config = FlashConfig(enabled=True)
     apply_flash_patch(config)
-    
+
     try:
-        # 2. Load model (this will return a FlashLLM because of the patch)
+        # 2. Load model (returns a FlashEngine — holistic patching — because of the patch)
         model, tokenizer = mlx_lm.load(str(tmp_model_dir))
-        from mlx_flash.generation import FlashLLM
-        assert isinstance(model, FlashLLM)
+        from mlx_flash.engine.engine import FlashEngine
+        assert isinstance(model, FlashEngine)
         
         # 3. Use standard mlx_lm.stream_generate
         prompt = "Hello"

@@ -73,20 +73,20 @@ class FlashManager:
         """
         self.config.validate()
         path = Path(model_path)
-        
+
         # User Experience Warnings
         self._check_spotlight_warning(path)
         self._check_battery_warning()
-        
+
         # 1. Set Metal wired limit BEFORE loading weights
         self._apply_wired_limit()
-        
+
         # 1.5 Start Telemetry Bridge for flash-monitor (opt-in)
         self._telemetry_bridge = None
         if self.config.monitor_queue is not None or self.config.debug:
             from .monitor import start_telemetry
             self._telemetry_bridge = start_telemetry(self.config)
-        
+
         # 2. Native lazy load: weights are lazy mmap-backed MLX arrays.
         # Avoid recursion if mlx_lm is monkey-patched
         try:
@@ -94,24 +94,28 @@ class FlashManager:
             loader = _ORIGINAL_LOAD or mlx_lm.load
         except (ImportError, AttributeError):
             loader = mlx_lm.load
-            
+
         model, self.tokenizer = loader(str(path), lazy=True)[:2]  # type: ignore
-        
-        # 3. Wrap in Flash execution engine
+
+        # 3. Wrap in Flash execution engine.
+        # FlashEngine uses holistic patching (StreamingProxy around the model's
+        # own layers) — verified to match plain mlx_lm output exactly on real
+        # models. Do NOT swap in FlashLLM here: its manual forward loop
+        # diverges on real architectures (see INTERNAL_NOTES.md).
         self.model = FlashEngine(model, self.tokenizer, self.config, model_path=path)
-        
+
         try:
             from .safetensors_mmap import SafetensorsMmapCache
             self.model.mmap_cache = SafetensorsMmapCache(path)
         except Exception as e:
             if self.config.debug:
                 print(f"[flash] Warning: Failed to initialize SafetensorsMmapCache: {e}")
-        
+
         if self.config.debug:
             import mlx.utils
             n_params = sum(v.size for _, v in mlx.utils.tree_flatten(model.parameters()))  # type: ignore
             print(f"[flash] Loaded {path.name}: {n_params/1e9:.1f}B params, lazy (0 Metal RAM)")
-            
+
         return self.model, self.tokenizer
 
     def shutdown(self):

@@ -215,6 +215,18 @@ class QuantizedDiskKVCache(KVCache):
     def offset(self):
         return self.disk_offset + (self.local_k.shape[2] if self.local_k is not None else 0)
 
+    @offset.setter
+    def offset(self, value):
+        # The parent KVCache.__init__ assigns self.offset = 0; we manage
+        # offset dynamically via disk_offset + local window, so ignore external sets.
+        pass
+
+    def is_trimmable(self):
+        # The inherited KVCache.trim() mutates self.offset, which this class
+        # ignores (see setter above) — allowing trim would silently corrupt
+        # state during prompt-cache reuse. Disk-backed history is append-only.
+        return False
+
     def size(self):
         return self.offset
 

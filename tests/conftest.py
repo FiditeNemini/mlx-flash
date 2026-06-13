@@ -152,7 +152,11 @@ def tmp_model_dir(tmp_path_factory):
         "added_tokens": [],
         "model": {
             "type": "BPE",
-            "vocab": {"<unk>": 0, "<s>": 1, "</s>": 2},
+            # Full vocab covering the model's 256-id output space so that
+            # generated ids decode to visible text (ids outside the vocab
+            # decode to '' and would make stream output look empty).
+            "vocab": {"<unk>": 0, "<s>": 1, "</s>": 2,
+                      **{f"w{i}": i for i in range(3, 256)}},
             "merges": []
         }
     }

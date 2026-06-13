@@ -44,7 +44,7 @@ We use a **Model Predictive Controller** to maximize tokens/second:
 
 `mlx-flash` is a **zero-compromise** engine. We have proven quality through:
 
-1.  **Bit-Perfect Operators**: `TiledLinear` uses FP32 accumulation, matching standard MLX behavior on Metal exactly. Loss Delta is **0.0000000000**.
+1.  **Bit-Perfect Operators**: `TiledLinear` executes identically to `nn.Linear` (fused `mx.addmm`), so the loss delta vs. standard MLX is **exactly 0**. Note: on MLX ≥ 0.31, Metal kernel selection makes block-wise tiled accumulation diverge from native fp16 matmul, so bit-exact mode executes layers whole; sub-layer tiling will return as an opt-in memory mode.
 2.  **Hybrid KV Cache**: Keeps the most recent **128 tokens in full FP16 precision**, while offloading older context to properly scaled 8-bit quantized disk storage.
 3.  **Passkey Retrieval**: Verified 100% accuracy on context retrieval tests hidden 1,000+ tokens deep in quantized disk storage.
 
@@ -56,8 +56,10 @@ See [QUALITY.md](docs/QUALITY.md) for the full proof suite.
 
 ### 1. Install
 ```bash
-pip install mlx-flash
+pip install git+https://github.com/matt-k-wong/mlx-flash.git
 ```
+
+> ⚠️ **Do not `pip install mlx-flash`** — the PyPI package by that name is an **unrelated project**. This project is installed from GitHub. Tested against `mlx>=0.31` / `mlx-lm>=0.31`.
 
 ### 2. Unified CLI
 ```bash
@@ -104,11 +106,9 @@ graph TD
 ---
 
 ## Roadmap
-- [x] **v0.3.5**: Holistic Model Patching (Bit-Perfect Parity).
-- [x] **v0.3.6**: Predictive MPC-Lite Bandwidth Controller.
-- [x] **v0.3.7**: Unified `mlx-flash` CLI & Modelfile support.
-- [ ] **v0.4.0**: Asynchronous DAG Scheduler (Zero-latency Python glue).
-- [ ] **v0.5.0**: MoE Lookahead Routing for Mixtral/DeepSeek.
+- [x] **v0.4.0**: Holistic Model Patching (Bit-Perfect Parity), MPC-Lite Bandwidth Controller, Unified `mlx-flash` CLI, `mlx`/`mlx-lm` 0.31+ compatibility.
+- [ ] **v0.5.0**: Asynchronous DAG Scheduler (Zero-latency Python glue).
+- [ ] **v0.6.0**: MoE Lookahead Routing for Mixtral/DeepSeek.
 
 ---
 

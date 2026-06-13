@@ -93,7 +93,13 @@ class FlashEngine(nn.Module):
         except ImportError: pass
 
     def parameters(self): return self.model.parameters()
-    def make_cache(self): return self.model.make_cache()
+
+    def make_cache(self):
+        if hasattr(self.model, "make_cache"):
+            return self.model.make_cache()
+        # mlx-lm >= 0.31 models have no make_cache(); build the default cache.
+        from mlx_lm.models.cache import make_prompt_cache
+        return make_prompt_cache(self.model)
 
     def __call__(self, *args, **kwargs) -> mx.array:
         """
@@ -114,7 +120,10 @@ class FlashEngine(nn.Module):
         # Execute original model logic (Embedding -> Patched Layers -> Norm -> Head)
         # Since we've patched self.model.layers IN PLACE, this call will
         # automatically use our StreamingProxies.
-        logits = self.model(*args, **kwargs)
+        # In mlx-lm >=0.31, Model.__call__ does not accept a 'mask' kwarg —
+        # the model builds its own attention mask internally.  Strip it here.
+        fwd_kwargs = {k: v for k, v in kwargs.items() if k != "mask"}
+        logits = self.model(*args, **fwd_kwargs)
         
         self.registry.dispatch("on_generation_end", ctx)
         return logits

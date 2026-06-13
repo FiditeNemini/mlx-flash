@@ -72,7 +72,12 @@ class FlashLLM(nn.Module):
         return self._layers
 
     def make_cache(self):
-        return self._model.make_cache()
+        if hasattr(self._model, "make_cache"):
+            return self._model.make_cache()
+        # mlx-lm >= 0.31 models have no make_cache(); build the default
+        # per-layer cache the same way mlx_lm.models.cache.make_prompt_cache does.
+        from mlx_lm.models.cache import make_prompt_cache
+        return make_prompt_cache(self._model)
 
     def parameters(self):
         return self._model.parameters()
@@ -393,6 +398,7 @@ class FlashGenerationLoop:
         
         temp = kwargs.pop("temperature", kwargs.pop("temp", 0.0))
         kwargs["sampler"] = make_sampler(temp=temp)
+        kwargs.setdefault("max_tokens", max_tokens)
         if "prefill_step_size" not in kwargs:
             kwargs["prefill_step_size"] = getattr(self.config, "prefill_chunk_size", 32)
 
@@ -402,6 +408,32 @@ class FlashGenerationLoop:
         prompt_arr = mx.array(self.tokenizer.encode(prompt)) if isinstance(prompt, str) else mx.array(prompt)
         detokenizer = self.tokenizer.detokenizer
         detokenizer.reset()
+
+        # When disk KV is enabled and no cache is already provided, inject it
+        if getattr(self.config, "disk_kv_enabled", False) and "prompt_cache" not in kwargs:
+            from mlx_lm.models.cache import make_prompt_cache
+            from .kv_cache.quantized_disk_cache import QuantizedDiskKVCache
+            from .disk_kv_cache import DiskKVCache
+
+            native_cache = make_prompt_cache(self.flash_model)
+            kv_dir = getattr(self.config, "disk_kv_dir", None) or "/tmp/mlx_flash_kv"
+            max_tokens_kv = getattr(self.config, "kv_keep", 0)
+            max_tokens_kv = max_tokens_kv if max_tokens_kv > 0 else None
+            disk_cache = []
+            for i, c in enumerate(native_cache):
+                name = c.__class__.__name__
+                if "KVCache" in name and "ArraysCache" not in name:
+                    if getattr(self.config, "kv_cache_quantized", False):
+                        disk_cache.append(QuantizedDiskKVCache(
+                            i, cache_dir=kv_dir, max_tokens=max_tokens_kv,
+                            bits=getattr(self.config, "kv_cache_bits", 4),
+                            local_window_size=getattr(self.config, "kv_cache_local_window_size", 128),
+                        ))
+                    else:
+                        disk_cache.append(DiskKVCache(i, cache_dir=kv_dir, max_tokens=max_tokens_kv))
+                else:
+                    disk_cache.append(c)
+            kwargs["prompt_cache"] = disk_cache
 
         for token, _ in generate_step(prompt_arr, self.flash_model, **kwargs):
             if getattr(self.config, 'enable_profiling', False):

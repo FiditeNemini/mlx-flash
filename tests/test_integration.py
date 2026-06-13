@@ -102,11 +102,11 @@ def test_lazy_load_uses_zero_metal_ram(tmp_model_dir, flash_config):
 
 
 def test_stream_generate_uses_flash_path(tmp_model_dir):
-    """Verify stream_generate routes through FlashLLM, not base model."""
+    """Verify stream_generate routes through the Flash proxy, not base model."""
     import mlx_lm
 
     from mlx_flash.config import FlashConfig
-    from mlx_flash.generation import FlashLLM
+    from mlx_flash.engine.engine import FlashEngine
     from mlx_flash.integration.lmstudio import apply_flash_patch, remove_flash_patch
 
     remove_flash_patch()
@@ -115,31 +115,33 @@ def test_stream_generate_uses_flash_path(tmp_model_dir):
     try:
         model, tokenizer = mlx_lm.load(str(tmp_model_dir))
 
-        # Verify the model IS a FlashLLM
-        assert isinstance(model, FlashLLM), (
-            f"mlx_lm.load() returned {type(model).__name__}, not FlashLLM. "
+        # Verify the model IS the Flash proxy. FlashEngine (holistic patching)
+        # is the public wrapper — it matches plain mlx_lm output exactly on
+        # real models, unlike FlashLLM's manual loop (see INTERNAL_NOTES.md).
+        assert isinstance(model, FlashEngine), (
+            f"mlx_lm.load() returned {type(model).__name__}, not FlashEngine. "
             f"The patch is not working."
         )
 
         # Verify __call__ is being intercepted (track calls)
         call_count = [0]
-        original_call = FlashLLM.__call__
+        original_call = FlashEngine.__call__
 
         def tracking_call(self_obj, x, **kwargs):
             call_count[0] += 1
             return original_call(self_obj, x, **kwargs)
 
-        FlashLLM.__call__ = tracking_call
+        FlashEngine.__call__ = tracking_call
 
         try:
             tokens = list(mlx_lm.stream_generate(
                 model, tokenizer, "Hi", max_tokens=3
             ))
         finally:
-            FlashLLM.__call__ = original_call
+            FlashEngine.__call__ = original_call
 
         assert call_count[0] > 0, (
-            "FlashLLM.__call__ was never invoked during stream_generate. "
+            "FlashEngine.__call__ was never invoked during stream_generate. "
             "The generation loop is bypassing the Flash Mode wrapper."
         )
         assert len(tokens) > 0, "No tokens generated"
