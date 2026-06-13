@@ -41,6 +41,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov",
+    "hypothesis>=6.0",
     "ruff>=0.4",
     "mypy>=1.10",
     "types-setuptools",
@@ -83,6 +84,7 @@ testpaths = ["tests"]
 addopts = ["-v", "--tb=short"]
 markers = [
     "stress: marks tests as stress/adversarial tests (run with -m stress)",
+    "real_model: marks tests that require a cached/downloaded real model",
 ]
 
 [tool.setuptools.packages.find]
